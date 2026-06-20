@@ -32,3 +32,10 @@ build/
 
 # Logs
 *.log
+
+# Test + pipeline-orchestrator artifacts
+.coverage
+.pytest_cache/
+
+# pipeline-orchestrator run artifacts (kept on disk for resume, not part of the deliverable PR)
+pipeline/
