@@ -154,7 +154,12 @@ def test_agent_task_maps_priority_high(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_shutdown_jarvis_calls_os_exit(monkeypatch, thread_guard):
-    """shutdown_jarvis spawns a daemon thread that calls os._exit(0); os._exit is mocked."""
+    """shutdown_jarvis spawns a daemon thread that calls os._exit(0); os._exit is mocked.
+
+    The _shutdown closure calls speak("Goodbye.") then sleeps 2.5s before os._exit.
+    We poll up to 5 seconds in 50ms increments to avoid a fixed sleep that is both
+    slower than needed and brittle if the OS scheduler delays the thread.
+    """
     fake_self = _make_fake_jarvis()
 
     exit_mock = MagicMock()
@@ -172,16 +177,22 @@ def test_shutdown_jarvis_calls_os_exit(monkeypatch, thread_guard):
         f"Expected 'Shutting down.', got {result!r}"
     )
 
-    # Wait long enough for the daemon thread's 2.5-second sleep to complete,
-    # then verify os._exit(0) was invoked exactly once.
-    # (This test intentionally takes ~3 seconds; see task spec for rationale.)
-    time.sleep(3.0)
+    # Poll until os._exit(0) is called (ceiling: 5s — thread sleeps 2.5s first).
+    # Using a polling loop rather than a fixed sleep cuts average CI wall time
+    # from ~3s to ~2.55s and avoids spurious failures if the thread runs late.
+    deadline = time.time() + 5.0
+    while time.time() < deadline and not exit_mock.called:
+        time.sleep(0.05)
 
     exit_mock.assert_called_once_with(0)
 
 
 def test_shutdown_jarvis_speaks_goodbye(monkeypatch, thread_guard):
-    """shutdown_jarvis thread calls self.speak('Goodbye.') before exiting."""
+    """shutdown_jarvis thread calls self.speak('Goodbye.') before exiting.
+
+    speak("Goodbye.") is invoked at the START of _shutdown (before the 2.5s sleep),
+    so the polling ceiling of 2 seconds is sufficient to observe it.
+    """
     fake_self = _make_fake_jarvis()
 
     # Suppress os._exit so the test process is not killed
@@ -190,7 +201,10 @@ def test_shutdown_jarvis_speaks_goodbye(monkeypatch, thread_guard):
     args = {}
     JarvisLocal._execute_tool(fake_self, "shutdown_jarvis", args)
 
-    # Wait for the daemon thread to run speak() and then hit the mocked _exit
-    time.sleep(3.0)
+    # Poll until speak("Goodbye.") is called (ceiling: 2s — speak fires before the
+    # 2.5s sleep, so this is generous while being faster than the old 3s fixed sleep).
+    deadline = time.time() + 2.0
+    while time.time() < deadline and not fake_self.speak.called:
+        time.sleep(0.05)
 
     fake_self.speak.assert_called_with("Goodbye.")

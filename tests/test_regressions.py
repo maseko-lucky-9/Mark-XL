@@ -9,6 +9,7 @@ B4 (T15): PLANNER_PROMPT missing file_processor tool entry
 Regression tests are PROVE-IT tests: they verify that known bugs have been fixed.
 Each test MUST pass with the current (fixed) codebase and WOULD FAIL on the pre-fix version.
 """
+import inspect
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -219,9 +220,6 @@ def test_b4_agent_task_not_in_planner_prompt():
 # ─────────────────────────────────────────────────────────────────────────────
 # FR-2.2 — **kwargs absorption safety net (WO-0)
 # ─────────────────────────────────────────────────────────────────────────────
-
-import inspect
-
 
 def test_kwargs_absorption_safety_net():
     """FR-2.2 regression: every action function must accept **kwargs so callers

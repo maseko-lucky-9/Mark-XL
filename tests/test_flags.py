@@ -9,7 +9,7 @@ Tests the flag rail in memory/config_manager.py (get_flag function added in T01)
 """
 import json
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -85,16 +85,40 @@ class TestStaticAssertions:
         import ast
         repo_root = Path(__file__).resolve().parent.parent
 
-        # Production files to check:
-        # - Exclude test files
-        # - Exclude __pycache__
-        # - Exclude venv
-        # - Exclude the defining module (config_manager.py)
-        production_files = [
-            f for f in repo_root.rglob("*.py")
-            if not any(part in str(f) for part in [".venv", "tests/", "__pycache__"])
-            and f.name != "config_manager.py"  # The defining module is exempt
-        ]
+        # Production file predicate — separator-agnostic via Path.parts membership.
+        # Path.parts splits on the OS-native separator on real paths, and
+        # PureWindowsPath.parts splits on backslashes even when running on POSIX,
+        # so this logic is correct on both Windows and POSIX without string-substring hacks.
+        # Exclusion rules:
+        #   - "tests" in parts          → test directories (works on Windows: parts=(…, 'tests', …))
+        #   - "__pycache__" in parts    → compiled-bytecode directories
+        #   - part.startswith(".venv")  → .venv, .venv-mac, .venv-win, etc.
+        #   - part == "venv"            → bare venv directory
+        #   - "site-packages" in part   → installed third-party packages
+        #   - f.name == "config_manager.py" → the defining module is exempt
+        def _is_production(f) -> bool:
+            return (
+                not any(
+                    p in {"tests", "__pycache__"}
+                    or p.startswith(".venv")
+                    or p == "venv"
+                    or "site-packages" in p
+                    for p in f.parts
+                )
+                and f.name != "config_manager.py"
+            )
+
+        # Prove the filter is separator-agnostic: PureWindowsPath splits on '\' even on
+        # POSIX, so this assertion validates Windows behaviour without needing a Windows box.
+        assert not _is_production(
+            PureWindowsPath(r"C:\repo\tests\test_flags.py")
+        ), "Filter must exclude Windows-style test paths (parts-based check is separator-agnostic)"
+        # Also confirm production paths are NOT over-excluded.
+        assert _is_production(
+            PureWindowsPath(r"C:\repo\agent\executor.py")
+        ), "Filter must NOT exclude legitimate production files"
+
+        production_files = [f for f in repo_root.rglob("*.py") if _is_production(f)]
 
         callers = []
         for py_file in production_files:
