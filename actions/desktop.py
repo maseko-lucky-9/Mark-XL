@@ -388,9 +388,9 @@ def get_desktop_stats() -> str:
 
 def desktop_control(
     parameters: dict = None,
-    response=None,
     player=None,
-    session_memory=None,
+    speak=None,
+    **kwargs
 ) -> str:
     """
     parameters:

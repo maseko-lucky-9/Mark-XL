@@ -1,0 +1,7 @@
+[2026-06-20T21:01:14Z] Phase -1->0 | self | constitution+intake created | -
+[2026-06-20T21:01:14Z] SPEC-CORRECTION intake.md | 18_action_tools->17 (agent_task/save_memory/shutdown_jarvis main-only)
+[2026-06-20T21:01:48Z] Phase 0->1 | self->planning-lead | dispatching | -
+[2026-06-20T21:07:57Z] Phase 1->2 | planning-lead | success/approve | spec.md verifier-APPROVED 8/8
+[2026-06-20T21:19:56Z] Phase 2->3 | analyze-lead | success/on_track | SRS PASS 8/8; surfaced executor-player must-fix (R-1)
+[2026-06-20T21:43:25Z] Phase 3->4 | design-lead | passed/within | PreFlight clean(secrets)+pass(banned)+within(scope); ADR-001
+[2026-06-20T21:57:57Z] Phase 4 | development-lead | completed/within | tasks.md = 17 tasks; routing -> orchestrator spawns inner-loop-controller

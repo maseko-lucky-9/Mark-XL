@@ -1,0 +1,11 @@
+{
+  "taskId": "T13",
+  "timestamp": "2026-06-21T00:48:00Z",
+  "buildPassed": true,
+  "typecheckPassed": true,
+  "testsPassed": true,
+  "testsAdded": 1,
+  "testCommand": "QT_QPA_PLATFORM=offscreen .venv-mac/bin/pytest tests/test_regressions.py::test_b2_executor_dispatches_file_processor -v",
+  "testOutput": "============================= test session starts ==============================\nplatform darwin -- Python 3.12.9, pytest-9.1.1, pluggy-1.6.0 -- /Users/ltmas/Repo/agents/mark-xl/.venv-mac/bin/python3\ncachedir: .pytest_cache\nrootdir: /Users/ltmas/Repo/agents/mark-xl\ncollecting ... collected 1 item\n\ntests/test_regressions.py::test_b2_executor_dispatches_file_processor PASSED [100%]\n\n============================== 1 passed in 0.16s ===============================",
+  "filesChanged": ["tests/test_regressions.py"]
+}

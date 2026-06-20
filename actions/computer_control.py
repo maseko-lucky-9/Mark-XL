@@ -352,9 +352,9 @@ def _screen_find(description: str) -> tuple[int, int] | None:
 
 def computer_control(
     parameters: dict,
-    response=None,
     player=None,
-    session_memory=None,
+    speak=None,
+    **kwargs
 ) -> str:
     """
     Dispatch table for all computer control actions.

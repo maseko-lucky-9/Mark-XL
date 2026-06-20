@@ -230,12 +230,7 @@ def _resolve_platform(platform_str: str):
     return lambda r, m: _desktop_send(platform_str.strip().title(), r, m)
 
 
-def send_message(
-    parameters: dict,
-    response=None,
-    player=None,
-    session_memory=None,
-) -> str:
+def send_message(parameters, player=None, speak=None, **kwargs) -> str:
     params       = parameters or {}
     receiver     = params.get("receiver", "").strip()
     message_text = params.get("message_text", "").strip()

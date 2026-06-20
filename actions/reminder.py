@@ -279,12 +279,7 @@ def _schedule_linux(target_dt: datetime, task_name: str,
     print("[Reminder] ❌ Neither systemd-run nor at found on this Linux system.")
     return ""
 
-def reminder(
-    parameters: dict,
-    response=None,
-    player=None,
-    session_memory=None,
-) -> str:
+def reminder(parameters, player=None, speak=None, **kwargs) -> str:
 
     date_str = parameters.get("date", "").strip()
     time_str = parameters.get("time", "").strip()

@@ -774,7 +774,7 @@ def _process_pptx(path: Path, action: str, params: dict, speak=None) -> str:
 
     return f"Unknown PPTX action: '{action}'. Try: summarize, extract_text, analyze"
 
-def file_processor(parameters: dict, player=None, speak=None) -> str:
+def file_processor(parameters: dict, player=None, speak=None, **kwargs) -> str:
     file_path_str = parameters.get("file_path", "").strip()
     if not file_path_str:
         return "No file path provided."

@@ -923,7 +923,7 @@ def _get_schedule_status() -> str:
         return "No scheduled game update found."
 
 
-def game_updater(parameters: dict, player=None, speak=None) -> str:
+def game_updater(parameters: dict, player=None, speak=None, **kwargs) -> str:
     p         = parameters or {}
     action    = p.get("action",    "update").lower().strip()
     platform  = p.get("platform",  "both").lower().strip()

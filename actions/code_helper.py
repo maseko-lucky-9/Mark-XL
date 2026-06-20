@@ -459,10 +459,9 @@ def _screen_debug_action(description, file_path, player, speak=None) -> str:
 
 def code_helper(
     parameters: dict,
-    response=None,
     player=None,
-    session_memory=None,
-    speak=None
+    speak=None,
+    **kwargs
 ) -> str:
     """
     Called from main.py.

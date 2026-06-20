@@ -1,0 +1,94 @@
+name: CI — WO-0 Foundations
+
+on:
+  push:
+    branches: ["wo-0-foundations", "main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 1: test — required, 12 matrix legs must all pass
+  # ─────────────────────────────────────────────────────────────────────────
+  test:
+    name: "Test (${{ matrix.os }} / py${{ matrix.python }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13, windows-latest, ubuntu-latest]
+        python: ["3.11", "3.12", "3.13"]
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install EGL dependency (Ubuntu only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-mock
+
+      - name: Run tests
+        run: pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 2: rust-wheel-placeholder — non-blocking stub (WO-1 activates real build)
+  # ─────────────────────────────────────────────────────────────────────────
+  rust-wheel-placeholder:
+    name: "Rust wheel placeholder (non-blocking)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@1.88
+
+      - name: Rust build placeholder (seam for WO-1)
+        run: echo "Rust wheel build placeholder — WO-1 activates maturin here"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Job 3: import-smoke — exits 0 when mark_xl_rust wheel is absent (expected in WO-0)
+  # ─────────────────────────────────────────────────────────────────────────
+  import-smoke:
+    name: "Import smoke (wheel absent OK)"
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install EGL dependency
+        run: sudo apt-get update && sudo apt-get install -y libegl1
+
+      - name: Install base dependencies
+        run: pip install PyQt6
+
+      - name: Import smoke (absent wheel exits 0)
+        run: |
+          python -c "
+          try:
+              import mark_xl_rust
+              print('mark_xl_rust imported OK')
+          except ImportError:
+              import sys
+              print('mark_xl_rust absent (expected in WO-0) — OK')
+              sys.exit(0)
+          "

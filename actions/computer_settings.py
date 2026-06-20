@@ -589,9 +589,9 @@ def _detect_action(description: str) -> dict:
 
 def computer_settings(
     parameters: dict = None,
-    response=None,
     player=None,
-    session_memory=None,
+    speak=None,
+    **kwargs
 ) -> str:
     if not _PYAUTOGUI:
         return "pyautogui is not installed. Run: pip install pyautogui"

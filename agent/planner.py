@@ -116,6 +116,13 @@ dev_agent
   description: string (required)
   language: string (optional)
 
+file_processor
+  file_path: string (required) — path to the file to process
+  action: "summarize" | "translate" | "rewrite" | "extract" | "custom" (required)
+  instruction: string (optional) — for custom actions
+  language: string (optional) — for translate action
+  output_path: string (optional) — where to save the result
+
 OUTPUT — return ONLY valid JSON, no markdown, no explanation, no code blocks:
 {
   "goal": "...",

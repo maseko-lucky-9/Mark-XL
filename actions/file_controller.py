@@ -469,9 +469,9 @@ def get_file_info(path: str, name: str = "") -> str:
 
 def file_controller(
     parameters: dict = None,
-    response=None,
     player=None,
-    session_memory=None,
+    speak=None,
+    **kwargs
 ) -> str:
     params = parameters or {}
     action = params.get("action", "").lower().strip()

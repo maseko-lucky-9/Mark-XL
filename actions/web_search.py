@@ -78,12 +78,7 @@ def _compare(items: list[str], aspect: str) -> str:
     return _llm_summarize(f"Compare {', '.join(items)} regarding {aspect}", raw)
 
 
-def web_search(
-    parameters:     dict,
-    response=None,
-    player=None,
-    session_memory=None,
-) -> str:
+def web_search(parameters, player=None, speak=None, **kwargs) -> str:
     params = parameters or {}
     query  = params.get("query", "").strip()
     mode   = params.get("mode",  "search").lower().strip()
