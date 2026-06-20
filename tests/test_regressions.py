@@ -214,3 +214,70 @@ def test_b4_agent_task_not_in_planner_prompt():
         "agent_task should NOT be in PLANNER_PROMPT — it has no executor branch "
         "and would raise ValueError post-B3."
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FR-2.2 — **kwargs absorption safety net (WO-0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+import inspect
+
+
+def test_kwargs_absorption_safety_net():
+    """FR-2.2 regression: every action function must accept **kwargs so callers
+    still passing legacy response= or session_memory= keyword args do not raise.
+
+    Approach: inspect.signature(fn).bind() with stray kwargs succeeds IFF the
+    signature contains a VAR_KEYWORD (**kwargs) parameter. No function is actually
+    called — zero side effects.
+
+    PRE-FIX FAILURE: old signatures had explicit `response=` and `session_memory=`
+    positional params; re-passing them as keyword args would raise TypeError.
+    POST-FIX: all 17 functions accept **kwargs and silently absorb any extra kwargs.
+    """
+    from actions.open_app import open_app
+    from actions.web_search import web_search
+    from actions.weather_report import weather_action
+    from actions.send_message import send_message
+    from actions.reminder import reminder
+    from actions.youtube_video import youtube_video
+    from actions.screen_processor import screen_process
+    from actions.computer_settings import computer_settings
+    from actions.browser_control import browser_control
+    from actions.file_controller import file_controller
+    from actions.desktop import desktop_control
+    from actions.code_helper import code_helper
+    from actions.dev_agent import dev_agent
+    from actions.computer_control import computer_control
+    from actions.game_updater import game_updater
+    from actions.flight_finder import flight_finder
+    from actions.file_processor import file_processor
+
+    action_functions = [
+        open_app,
+        web_search,
+        weather_action,
+        send_message,
+        reminder,
+        youtube_video,
+        screen_process,
+        computer_settings,
+        browser_control,
+        file_controller,
+        desktop_control,
+        code_helper,
+        dev_agent,
+        computer_control,
+        game_updater,
+        flight_finder,
+        file_processor,
+    ]
+
+    for fn in action_functions:
+        try:
+            inspect.signature(fn).bind({}, response="stray_resp", session_memory="stray_mem")
+        except TypeError as exc:
+            raise AssertionError(
+                f"FR-2.2: {fn.__name__} does not absorb stray kwargs — "
+                f"**kwargs is missing from its signature. bind() raised: {exc}"
+            ) from exc
