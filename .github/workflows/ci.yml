@@ -35,12 +35,21 @@ jobs:
         # imports sounddevice at module load, which needs PortAudio on Linux
         # (bundled in the Windows/macOS wheels, not on the ubuntu runner).
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libportaudio2
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libportaudio2 xvfb
 
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-mock
 
-      - name: Run tests
+      - name: Run tests (Linux, under virtual X server)
+        # mouseinfo (pyautogui dep) opens an X socket at import; xvfb-run provides
+        # a headless virtual display. xvfb-run is Linux-only, hence the split.
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Run tests (Windows/macOS)
+        if: runner.os != 'Linux'
         run: pytest -q
         env:
           QT_QPA_PLATFORM: offscreen
