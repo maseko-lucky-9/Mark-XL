@@ -222,8 +222,37 @@ def _register_inline_specs() -> None:
         _REGISTRY["save_memory"] = ToolSpec(
             name="save_memory",
             func=_save_memory_handler,
-            description="",
-            parameters={},
+            description=(
+                "Save a personal fact about the user to permanent long-term memory. "
+                "MANDATORY: call this IMMEDIATELY (without asking) whenever the user states or corrects: "
+                "their name, age, city, job, school, language, nationality, a preference, a goal, or a relationship. "
+                "Examples: "
+                "'my name is Fatih' → (identity, name, Fatih) | "
+                "'not Travis, Fatih' → (identity, name, Fatih) | "
+                "'I am 22' → (identity, age, 22) | "
+                "'I live in Ankara' → (identity, city, Ankara) | "
+                "'I prefer dark mode' → (preferences, ui_theme, dark mode). "
+                "Call SILENTLY alongside your verbal reply — never announce that you are saving."
+            ),
+            parameters={
+                "type": "OBJECT",
+                "properties": {
+                    "category": {
+                        "type": "STRING",
+                        "description": (
+                            "identity (name/age/city/job/school/nationality) | "
+                            "preferences (likes/dislikes/habits) | "
+                            "projects (active work/goals) | "
+                            "relationships (people in their life) | "
+                            "wishes (future plans/wants) | "
+                            "notes (anything else)"
+                        )
+                    },
+                    "key":   {"type": "STRING", "description": "Short snake_case key, e.g. 'name', 'age', 'favorite_color'"},
+                    "value": {"type": "STRING", "description": "Concise value in English"},
+                },
+                "required": ["category", "key", "value"]
+            },
             planner_block="",
             is_planner_visible=False,
             is_silent=True,
@@ -233,8 +262,19 @@ def _register_inline_specs() -> None:
         _REGISTRY["agent_task"] = ToolSpec(
             name="agent_task",
             func=_agent_task_handler,
-            description="",
-            parameters={},
+            description=(
+                "Executes complex multi-step tasks requiring multiple different tools. "
+                "Examples: 'research X and save to file', 'find and organize files'. "
+                "DO NOT use for single commands."
+            ),
+            parameters={
+                "type": "OBJECT",
+                "properties": {
+                    "goal":     {"type": "STRING", "description": "Complete description of what to accomplish"},
+                    "priority": {"type": "STRING", "description": "low | normal | high"}
+                },
+                "required": ["goal"]
+            },
             planner_block="",
             is_planner_visible=False,
             inline=True,
@@ -243,8 +283,12 @@ def _register_inline_specs() -> None:
         _REGISTRY["shutdown_jarvis"] = ToolSpec(
             name="shutdown_jarvis",
             func=_shutdown_jarvis_handler,
-            description="",
-            parameters={},
+            description=(
+                "Shuts down the assistant completely. "
+                "Call this when the user expresses intent to end the conversation, "
+                "close the assistant, say goodbye, or stop Jarvis."
+            ),
+            parameters={"type": "OBJECT", "properties": {}},
             planner_block="",
             is_planner_visible=False,
             inline=True,

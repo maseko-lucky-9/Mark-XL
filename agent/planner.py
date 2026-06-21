@@ -139,13 +139,42 @@ OUTPUT — return ONLY valid JSON, no markdown, no explanation, no code blocks:
 """
 
 
-def create_plan(goal: str, context: str = "") -> dict:
+# ---------------------------------------------------------------------------
+# Prompt split — flag-free; the flag is read by the CONSUMER (main.py)
+# ---------------------------------------------------------------------------
+
+_PREAMBLE_END_MARKER = "AVAILABLE TOOLS AND THEIR PARAMETERS:\n\n"
+_FOOTER_START_MARKER = "\n\nOUTPUT — return ONLY valid JSON"
+
+_preamble_idx = PLANNER_PROMPT.index(_PREAMBLE_END_MARKER)
+_tool_start   = _preamble_idx + len(_PREAMBLE_END_MARKER)
+_footer_idx   = PLANNER_PROMPT.index(_FOOTER_START_MARKER, _tool_start)
+
+# _PLANNER_PREAMBLE: everything up to and including "AVAILABLE TOOLS AND THEIR PARAMETERS:\n\n"
+_PLANNER_PREAMBLE: str = PLANNER_PROMPT[:_tool_start]
+# _FOOTER_START_MARKER starts with "\n\n"; build_planner_prompt adds "\n\n" before footer,
+# so _PLANNER_FOOTER starts with "OUTPUT..." (strips the leading "\n\n").
+_PLANNER_FOOTER: str   = PLANNER_PROMPT[_footer_idx + len("\n\n"):]
+
+
+def build_planner_prompt(tool_block: str) -> str:
+    """Assemble a planner prompt with a registry-built tool block.
+    Keeps _PLANNER_PREAMBLE and _PLANNER_FOOTER verbatim.
+    Flag-FREE: the flag is read by the CONSUMER (main.py), never here."""
+    return _PLANNER_PREAMBLE + tool_block + "\n\n" + _PLANNER_FOOTER
+
+
+# ---------------------------------------------------------------------------
+
+
+def create_plan(goal: str, context: str = "", system: str | None = None) -> dict:
     user_input = f"Goal: {goal}"
     if context:
         user_input += f"\n\nContext: {context}"
 
+    effective_system = system if system is not None else PLANNER_PROMPT
     try:
-        text = call_llm_text(user_input, system=PLANNER_PROMPT)
+        text = call_llm_text(user_input, system=effective_system)
         text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
 
         plan = json.loads(text)
@@ -187,7 +216,13 @@ def _fallback_plan(goal: str) -> dict:
     }
 
 
-def replan(goal: str, completed_steps: list, failed_step: dict, error: str) -> dict:
+def replan(
+    goal: str,
+    completed_steps: list,
+    failed_step: dict,
+    error: str,
+    system: str | None = None,
+) -> dict:
     completed_summary = "\n".join(
         f"  - Step {s['step']} ({s['tool']}): DONE" for s in completed_steps
     )
@@ -201,8 +236,9 @@ Error: {error}
 
 Create a REVISED plan for the remaining work only. Do not repeat completed steps."""
 
+    effective_system = system if system is not None else PLANNER_PROMPT
     try:
-        text = call_llm_text(prompt, system=PLANNER_PROMPT)
+        text = call_llm_text(prompt, system=effective_system)
         text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`").strip()
         plan = json.loads(text)
 

@@ -131,7 +131,7 @@ class TestStaticAssertions:
                 # Skip files that can't be read (e.g., binary)
                 pass
 
-        assert callers == [], (
-            f"WO-0 production code must NOT call get_flag to gate behaviour. "
+        assert set(callers) == {"main.py", "agent/executor.py"}, (
+            f"WO-2 sanctioned get_flag callers must be exactly {{main.py, agent/executor.py}}. "
             f"Callers found: {callers}"
         )
