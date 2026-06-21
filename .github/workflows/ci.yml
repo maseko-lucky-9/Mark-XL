@@ -30,9 +30,12 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      - name: Install EGL dependency (Ubuntu only)
+      - name: Install system libs (Ubuntu only)
+        # libegl1 for headless Qt (offscreen); libportaudio2 because core/tts.py
+        # imports sounddevice at module load, which needs PortAudio on Linux
+        # (bundled in the Windows/macOS wheels, not on the ubuntu runner).
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libportaudio2
 
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-mock
