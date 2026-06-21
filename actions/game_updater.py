@@ -9,6 +9,7 @@ from pathlib import Path
 from datetime import datetime
 
 from config import get_os, is_windows, is_mac, is_linux
+from core.tool_registry import register_tool
 
 _KNOWN_APPIDS: dict[str, tuple[str, str]] = {
     "pubg":                ("578080",  "PUBG: Battlegrounds"),
@@ -923,6 +924,35 @@ def _get_schedule_status() -> str:
         return "No scheduled game update found."
 
 
+@register_tool(
+    name="game_updater",
+    description=(
+        "THE ONLY tool for ANY Steam or Epic Games request. "
+        "Use for: installing, downloading, updating games, listing installed games."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":    {"type": "STRING",  "description": "update | install | list | download_status | schedule | cancel_schedule | schedule_status"},
+            "platform":  {"type": "STRING",  "description": "steam | epic | both"},
+            "game_name": {"type": "STRING",  "description": "Game name"},
+            "app_id":    {"type": "STRING",  "description": "Steam AppID"},
+            "hour":      {"type": "INTEGER", "description": "Hour for scheduled update 0-23"},
+            "minute":    {"type": "INTEGER", "description": "Minute for scheduled update 0-59"},
+            "shutdown_when_done": {"type": "BOOLEAN", "description": "Shut down PC when done"},
+        },
+        "required": []
+    },
+    planner_block=(
+        "game_updater\n"
+        '  action: "update" | "install" | "list" | "download_status" | "schedule" (required)\n'
+        '  platform: "steam" | "epic" | "both" (optional, default: both)\n'
+        "  game_name: string (optional)\n"
+        "  app_id: string (optional)\n"
+        "  shutdown_when_done: boolean (optional)"
+    ),
+    is_planner_visible=True,
+)
 def game_updater(parameters: dict, player=None, speak=None, **kwargs) -> str:
     p         = parameters or {}
     action    = p.get("action",    "update").lower().strip()

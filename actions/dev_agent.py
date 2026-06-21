@@ -5,6 +5,8 @@ import re
 import time
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -492,6 +494,26 @@ def _build_project(
     return f"{msg}\n\nLast error:\n{last_output[:600]}"
 
 
+@register_tool(
+    name="dev_agent",
+    description="Builds complete multi-file projects from scratch.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "description":  {"type": "STRING", "description": "What the project should do"},
+            "language":     {"type": "STRING", "description": "Programming language"},
+            "project_name": {"type": "STRING", "description": "Optional project folder name"},
+            "timeout":      {"type": "INTEGER", "description": "Run timeout in seconds"},
+        },
+        "required": ["description"]
+    },
+    planner_block=(
+        "dev_agent\n"
+        "  description: string (required)\n"
+        "  language: string (optional)"
+    ),
+    is_planner_visible=True,
+)
 def dev_agent(
     parameters: dict,
     player=None,

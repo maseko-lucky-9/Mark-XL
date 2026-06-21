@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from config import is_windows, is_mac, is_linux
+from core.tool_registry import register_tool
 
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -281,6 +282,30 @@ def _save_to_desktop(content: str, origin: str, destination: str) -> str:
     return str(filepath)
 
 
+@register_tool(
+    name="flight_finder",
+    description="Searches Google Flights and speaks the best options.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "origin":      {"type": "STRING",  "description": "Departure city or airport code"},
+            "destination": {"type": "STRING",  "description": "Arrival city or airport code"},
+            "date":        {"type": "STRING",  "description": "Departure date"},
+            "return_date": {"type": "STRING",  "description": "Return date for round trips"},
+            "passengers":  {"type": "INTEGER", "description": "Number of passengers"},
+            "cabin":       {"type": "STRING",  "description": "economy | premium | business | first"},
+            "save":        {"type": "BOOLEAN", "description": "Save results to Notepad"},
+        },
+        "required": ["origin", "destination", "date"]
+    },
+    planner_block=(
+        "flight_finder\n"
+        "  origin: string (required)\n"
+        "  destination: string (required)\n"
+        "  date: string (required)"
+    ),
+    is_planner_visible=True,
+)
 def flight_finder(parameters: dict, player=None, speak=None, **kwargs) -> str:
     params = parameters or {}
 

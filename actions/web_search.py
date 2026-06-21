@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -78,6 +80,28 @@ def _compare(items: list[str], aspect: str) -> str:
     return _llm_summarize(f"Compare {', '.join(items)} regarding {aspect}", raw)
 
 
+@register_tool(
+    name="web_search",
+    description="Searches the web for any information.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "query":  {"type": "STRING", "description": "Search query"},
+            "mode":   {"type": "STRING", "description": "search (default) or compare"},
+            "items":  {"type": "ARRAY", "items": {"type": "STRING"}, "description": "Items to compare"},
+            "aspect": {"type": "STRING", "description": "price | specs | reviews"}
+        },
+        "required": ["query"]
+    },
+    planner_block=(
+        "web_search\n"
+        "  query: string (required) — write a clear, focused search query\n"
+        "  mode: \"search\" or \"compare\" (optional, default: search)\n"
+        "  items: list of strings (optional, for compare mode)\n"
+        "  aspect: string (optional, for compare mode)"
+    ),
+    is_planner_visible=True,
+)
 def web_search(parameters, player=None, speak=None, **kwargs) -> str:
     params = parameters or {}
     query  = params.get("query", "").strip()

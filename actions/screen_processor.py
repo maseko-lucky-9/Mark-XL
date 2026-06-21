@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Optional, Callable
 
+from core.tool_registry import register_tool
+
 try:
     import cv2
     _CV2 = True
@@ -222,6 +224,29 @@ def _call_vision(image_bytes: bytes, mime: str, user_text: str) -> str:
 # Public entry point
 # ---------------------------------------------------------------------------
 
+@register_tool(
+    name="screen_process",
+    description=(
+        "Captures and analyzes the screen or webcam image. "
+        "MUST be called when user asks what is on screen, what you see, "
+        "analyze my screen, look at camera, etc. "
+        "You have NO visual ability without this tool."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "angle": {"type": "STRING", "description": "'screen' or 'camera'. Default: 'screen'"},
+            "text":  {"type": "STRING", "description": "The question about the captured image"}
+        },
+        "required": ["text"]
+    },
+    planner_block=(
+        "screen_process\n"
+        "  text: string (required) — what to analyze or ask about the screen\n"
+        "  angle: \"screen\" | \"camera\" (optional)"
+    ),
+    is_planner_visible=True,
+)
 def screen_process(
     parameters:     dict,
     player=None,

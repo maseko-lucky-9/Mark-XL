@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 def _base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
@@ -279,6 +281,26 @@ def _schedule_linux(target_dt: datetime, task_name: str,
     print("[Reminder] ❌ Neither systemd-run nor at found on this Linux system.")
     return ""
 
+@register_tool(
+    name="reminder",
+    description="Sets a timed reminder using Task Scheduler.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "date":    {"type": "STRING", "description": "Date in YYYY-MM-DD format"},
+            "time":    {"type": "STRING", "description": "Time in HH:MM format (24h)"},
+            "message": {"type": "STRING", "description": "Reminder message text"}
+        },
+        "required": ["date", "time", "message"]
+    },
+    planner_block=(
+        "reminder\n"
+        "  date: string YYYY-MM-DD (required)\n"
+        "  time: string HH:MM (required)\n"
+        "  message: string (required)"
+    ),
+    is_planner_visible=True,
+)
 def reminder(parameters, player=None, speak=None, **kwargs) -> str:
 
     date_str = parameters.get("date", "").strip()

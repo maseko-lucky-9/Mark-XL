@@ -4,6 +4,8 @@ import sys
 import time
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -230,6 +232,31 @@ def _resolve_platform(platform_str: str):
     return lambda r, m: _desktop_send(platform_str.strip().title(), r, m)
 
 
+@register_tool(
+    name="send_message",
+    description=(
+        "Sends a message to a specific person via WhatsApp, Telegram, or similar. "
+        "ONLY use this when the user explicitly provides BOTH a recipient AND message content. "
+        "Example triggers: 'text John saying I am late', 'send a WhatsApp to mom that dinner is ready'. "
+        "Do NOT call this if the user only wants to open the app without sending a message."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "receiver":     {"type": "STRING", "description": "Recipient contact name"},
+            "message_text": {"type": "STRING", "description": "The exact message text to send"},
+            "platform":     {"type": "STRING", "description": "Platform: WhatsApp, Telegram, etc."}
+        },
+        "required": ["receiver", "message_text", "platform"]
+    },
+    planner_block=(
+        "send_message\n"
+        "  receiver: string (required)\n"
+        "  message_text: string (required)\n"
+        "  platform: string (required)"
+    ),
+    is_planner_visible=True,
+)
 def send_message(parameters, player=None, speak=None, **kwargs) -> str:
     params       = parameters or {}
     receiver     = params.get("receiver", "").strip()

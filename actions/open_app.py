@@ -3,6 +3,8 @@ import subprocess
 import platform
 import shutil
 
+from core.tool_registry import register_tool
+
 try:
     import psutil
     _PSUTIL = True
@@ -221,6 +223,26 @@ _OS_LAUNCHERS = {
     "Linux":   _launch_linux,
 }
 
+@register_tool(
+    name="open_app",
+    description=(
+        "Opens or launches any application, website, or program on the computer. "
+        "ALWAYS use this when the user says: open, launch, start, run, pull up, "
+        "or 'open X real quick'. Examples: 'open WhatsApp', 'open Chrome', "
+        "'launch Spotify', 'open calculator', 'pull up WhatsApp'. "
+        "Do NOT use send_message just because the app is a messaging app — "
+        "if the user only says to open it, call open_app."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "app_name": {"type": "STRING", "description": "Name of the application or website to open"}
+        },
+        "required": ["app_name"]
+    },
+    planner_block="open_app\n  app_name: string (required)",
+    is_planner_visible=True,
+)
 def open_app(parameters, player=None, speak=None, **kwargs) -> str:
     app_name = (parameters or {}).get("app_name", "").strip()
 

@@ -9,6 +9,8 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
+from core.tool_registry import register_tool
+
 try:
     import pyautogui
     _PYAUTOGUI = True
@@ -386,6 +388,28 @@ def get_desktop_stats() -> str:
         f"  Path    : {desktop}"
     )
 
+@register_tool(
+    name="desktop_control",
+    description="Controls the desktop: wallpaper, organize, clean, list, stats.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action": {"type": "STRING", "description": "wallpaper | wallpaper_url | organize | clean | list | stats | task"},
+            "path":   {"type": "STRING", "description": "Image path for wallpaper"},
+            "url":    {"type": "STRING", "description": "Image URL for wallpaper_url"},
+            "mode":   {"type": "STRING", "description": "by_type or by_date for organize"},
+            "task":   {"type": "STRING", "description": "Natural language desktop task"},
+        },
+        "required": ["action"]
+    },
+    planner_block=(
+        "desktop_control\n"
+        '  action: "wallpaper" | "organize" | "clean" | "list" | "task" (required)\n'
+        "  path: string (optional)\n"
+        "  task: string (optional)"
+    ),
+    is_planner_visible=True,
+)
 def desktop_control(
     parameters: dict = None,
     player=None,
