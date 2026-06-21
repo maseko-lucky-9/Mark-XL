@@ -76,11 +76,14 @@ class TestConfigFunctions:
 class TestStaticAssertions:
     """Static assertions about production code structure."""
 
-    def test_no_production_code_calls_get_flag(self):
-        """Static assertion: no WO-0 production file gates behaviour behind get_flag.
+    def test_only_sanctioned_production_code_calls_get_flag(self):
+        """Static assertion: only sanctioned production files gate behaviour behind get_flag.
 
-        This ensures flags are not yet in use; they are infrastructure for future
-        feature-gating work (TAS-8 onwards).
+        WO-0 added the flag rail as infrastructure with zero callers. WO-1 wires the
+        FIRST sanctioned caller: main.py gates the optional mark_xl_rust wheel behind
+        get_flag("use_rust_wheel") (default OFF) per WO-1 AC4. Any NEW caller beyond the
+        allowlist below must be a deliberate, reviewed feature-gate — this test pins the
+        set so an accidental/un-reviewed get_flag call is caught.
         """
         import ast
         repo_root = Path(__file__).resolve().parent.parent
@@ -131,7 +134,11 @@ class TestStaticAssertions:
                 # Skip files that can't be read (e.g., binary)
                 pass
 
-        assert callers == [], (
-            f"WO-0 production code must NOT call get_flag to gate behaviour. "
-            f"Callers found: {callers}"
+        # Allowlist of sanctioned get_flag callers. main.py was added by WO-1 (AC4)
+        # to gate the optional mark_xl_rust wheel behind use_rust_wheel (default OFF).
+        sanctioned = ["main.py"]
+        assert callers == sanctioned, (
+            f"Only sanctioned production files may gate behaviour behind get_flag. "
+            f"Expected {sanctioned}, found {callers}. A new caller must be a reviewed "
+            f"feature-gate added to this allowlist."
         )
