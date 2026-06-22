@@ -74,3 +74,18 @@ def get_flag(name: str, default: bool = False) -> bool:
         return bool(_FLAG_SCHEMA.get(name, default))
     except Exception:
         return bool(_FLAG_SCHEMA.get(name, default))
+
+
+def get_security_config(key: str, default=None):
+    """Read a security configuration value directly from config/flags.json.
+
+    Unlike get_flag, this reads the config dict directly and can return any type.
+    Do not use get_flag inside this function to avoid bypassing the allowlist.
+    """
+    try:
+        if _FLAGS_FILE.exists():
+            data = json.loads(_FLAGS_FILE.read_text(encoding="utf-8"))
+            return data.get(key, default)
+        return default
+    except Exception:
+        return default

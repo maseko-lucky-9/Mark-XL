@@ -2039,6 +2039,37 @@ class MainWindow(QMainWindow):
         if self._on_reconfigure_cb:
             self._on_reconfigure_cb(cfg)
 
+    def _show_confirm_dialog(self, tool: str, preview: str, timeout: int) -> bool:
+        """WO-3 security-gate confirm dialog. Returns True on Approve, False on Cancel or timeout."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+        from PyQt6.QtCore import pyqtSlot, QTimer
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Confirm: {tool}")
+        dlg.setModal(True)
+
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel(f"<b>Tool:</b> {tool}"))
+        lbl = QLabel(preview[:500])
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        btn_row = QHBoxLayout()
+        approve_btn = QPushButton("Approve")
+        cancel_btn  = QPushButton("Cancel")
+        approve_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
+        btn_row.addWidget(approve_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        timer = QTimer(dlg)
+        timer.setSingleShot(True)
+        timer.timeout.connect(dlg.reject)
+        timer.start(timeout * 1000)
+
+        return dlg.exec() == QDialog.DialogCode.Accepted
+
 
 class _RootShim:
     def __init__(self, app: QApplication):
@@ -2115,3 +2146,35 @@ class JarvisUI:
     def stop_speaking(self):
         if not self.muted:
             self.set_state("LISTENING")
+
+    def ask_user_confirm(self, tool: str, preview: str, timeout: int = 30) -> bool:
+        """WO-3 security-gate: show a modal confirm QDialog on the Qt main thread.
+
+        Thread-safe: if called from a worker thread, marshals to the main thread
+        via a threading.Event + a QTimer scheduled on the main event loop.
+        Returns True iff the operator approves.
+        """
+        from PyQt6.QtCore import QThread, QMetaObject, Qt, QTimer
+
+        if QThread.currentThread() == QApplication.instance().thread():
+            # Main thread — call directly
+            return self._win._show_confirm_dialog(tool, preview, timeout)
+
+        # Worker thread: schedule on the main thread via a zero-timeout timer,
+        # then block the worker thread until the dialog closes.
+        _result = [False]
+        _event = threading.Event()
+
+        def _invoke():
+            try:
+                _result[0] = self._win._show_confirm_dialog(tool, preview, timeout)
+            finally:
+                _event.set()
+
+        _timer = QTimer()
+        _timer.setSingleShot(True)
+        _timer.timeout.connect(_invoke)
+        _timer.moveToThread(QApplication.instance().thread())
+        QMetaObject.invokeMethod(_timer, "start", Qt.ConnectionType.QueuedConnection)
+        _event.wait(timeout + 5)
+        return _result[0]

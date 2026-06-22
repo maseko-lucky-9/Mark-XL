@@ -39,3 +39,9 @@ build/
 
 # pipeline-orchestrator run artifacts (kept on disk for resume, not part of the deliverable PR)
 pipeline/
+
+# Audit database directory
+data/
+
+# Sensitive credential file
+config/api_keys.json

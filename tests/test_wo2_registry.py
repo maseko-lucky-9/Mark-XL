@@ -260,7 +260,8 @@ def test_m3_main_result_parity_screen_process(monkeypatch, registry_snapshot):
     from core.tool_registry import import_all_tools
     import_all_tools()
 
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF (registry dispatch path).
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
     # _execute_tool does a call-time `from core.tool_registry import dispatch`,
     # so patching the attribute on the module object intercepts it.
@@ -307,7 +308,8 @@ def test_m3_main_result_parity_file_processor(monkeypatch, registry_snapshot):
         return f"processed:{parameters.get('file_path')}"
 
     # ── flag-ON path ──────────────────────────────────────────────────────────
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF (registry dispatch path).
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
     import core.tool_registry as reg
 
@@ -389,7 +391,8 @@ def test_m5_executor_screen_process_coercion_flag_on(monkeypatch, registry_snaps
     from core.tool_registry import import_all_tools
     import_all_tools()
 
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF (registry dispatch path).
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
     # _call_tool does `from core.tool_registry import dispatch` at call time.
     import core.tool_registry as reg

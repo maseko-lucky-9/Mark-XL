@@ -92,7 +92,9 @@ def test_flag_on_generated_code_own_branch(monkeypatch):
 def test_flag_on_screen_process_non_str_coercion(monkeypatch):
     """flag-ON: if dispatch returns a non-str for screen_process, coerce to sentinel string."""
     import memory.config_manager as cm
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF (this test exercises the registry
+    # dispatch path, not the WO-3 security path).
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
     # dispatch returns a non-str (e.g. None or a dict)
     import core.tool_registry as tr
@@ -117,7 +119,8 @@ def test_flag_on_generic_tool_returns_dispatch_result(monkeypatch):
     (e.g. open_app) when dispatch returns a non-empty string.
     """
     import memory.config_manager as cm
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF (registry dispatch path).
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
     import core.tool_registry as tr
     monkeypatch.setattr(tr, "dispatch", lambda name, params, **kw: "app opened")
@@ -141,9 +144,13 @@ def test_flag_on_generated_code_nonempty_calls_run(monkeypatch):
     monkeypatched to avoid side-effects.
     """
     import memory.config_manager as cm
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: True)
+    # use_tool_registry ON, security gates OFF.
+    monkeypatch.setattr(cm, "get_flag", lambda name, *a, **k: name != "enable_security_gates")
 
-    monkeypatch.setattr("agent.executor._run_generated_code", lambda desc, speak=None: "code ran")
+    monkeypatch.setattr(
+        "agent.executor._run_generated_code",
+        lambda desc, speak=None, **kw: "code ran",
+    )
 
     from agent.executor import _call_tool
     result = _call_tool("generated_code", {"description": "print hello"}, player=None, speak=None)
