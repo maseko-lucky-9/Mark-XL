@@ -705,7 +705,17 @@ class JarvisLocal:
         # Rule: static content first → semi-static memory middle → dynamic time LAST.
         sys_p   = _load_system_prompt()               # static — never changes mid-session
         memory  = load_memory()
-        mem_str = format_memory_for_prompt(memory)    # semi-static — changes only when user tells facts
+        if _get_flag("enable_memory_v2"):
+            from core.memory_v2 import MemoryV2  # lazy — avoids SQLite layer when flag is OFF
+            result = MemoryV2(memory).build_context(query="")
+            if result.get("degraded"):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "_build_system_prompt: MemoryV2 degraded to legacy (lane=%s)", result.get("lane")
+                )
+            mem_str = result["context"]
+        else:
+            mem_str = format_memory_for_prompt(memory)    # semi-static — changes only when user tells facts
         now     = datetime.now()
         time_ctx = (
             f"[CURRENT DATE & TIME]\n"

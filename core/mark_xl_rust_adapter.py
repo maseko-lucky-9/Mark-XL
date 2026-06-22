@@ -248,3 +248,103 @@ class RustResultBridge(QObject):
 
         future.add_done_callback(_on_done)
         return future
+
+
+# ---------------------------------------------------------------------------
+# WO-4 P1 — SQLiteMemory wrappers (C-1)
+# All gated on WHEEL_AVAILABLE; use run_in_executor for off-thread dispatch.
+# The flag decision is passed in by callers; this module never reads it (AC10).
+# ---------------------------------------------------------------------------
+
+def sqlite_memory(db_path: str) -> "Optional[Any]":
+    """Construct mark_xl_rust.SQLiteMemory(db_path). Returns None in legacy mode.
+
+    Caller must invoke via: run_in_executor(sqlite_memory, db_path).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE:
+        logger.warning(_LEGACY_MSG, "sqlite_memory")
+        return None
+    return _rust.SQLiteMemory(db_path)
+
+
+def sqlite_store(mem: Any, content: str, source: str, metadata: "Optional[str]" = None) -> "Optional[str]":
+    """Call mem.store(content, source, metadata) -> UUID str. Returns None in legacy mode.
+
+    Confirmed signature (phase_2_handoff.txt): store(content, source, metadata=None) -> uuid
+    Caller must invoke via: run_in_executor(sqlite_store, mem, content, source, metadata).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE or mem is None:
+        logger.warning(_LEGACY_MSG, "sqlite_store")
+        return None
+    return mem.store(content, source, metadata)
+
+
+def sqlite_retrieve(mem: Any, query: str, top_k: int = 5) -> "Optional[str]":
+    """Call mem.retrieve(query, top_k) -> JSON str. Returns None in legacy mode.
+
+    JSON hit keys: {content, score, source, metadata} (C6)
+    Caller must invoke via: run_in_executor(sqlite_retrieve, mem, query, top_k).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE or mem is None:
+        logger.warning(_LEGACY_MSG, "sqlite_retrieve")
+        return None
+    return mem.retrieve(query, top_k)
+
+
+def has_semantic_bindings() -> bool:
+    """Return True iff the wheel is available AND FAISSMemory has retrieve_by_embedding.
+
+    True post-rebuild (P2 state). Used for runtime graceful-degrade decisions.
+    """
+    return WHEEL_AVAILABLE and hasattr(_rust.FAISSMemory if _rust is not None else object, "retrieve_by_embedding")
+
+
+# ---------------------------------------------------------------------------
+# WO-4 P2 — FAISSMemory wrappers (C-1)
+# All gated on WHEEL_AVAILABLE; use run_in_executor for off-thread dispatch.
+# ---------------------------------------------------------------------------
+
+def faiss_memory(db_path: str, dim: int) -> "Optional[Any]":
+    """Construct mark_xl_rust.FAISSMemory(db_path, dim). Returns None in legacy mode.
+
+    Caller must invoke via: run_in_executor(faiss_memory, db_path, dim).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE:
+        logger.warning(_LEGACY_MSG, "faiss_memory")
+        return None
+    return _rust.FAISSMemory(db_path, dim)
+
+
+def faiss_store_with_embedding(
+    mem: Any,
+    content: str,
+    source: str,
+    embedding: "list[float]",
+    metadata: "Optional[str]" = None,
+) -> "Optional[str]":
+    """Call mem.store_with_embedding(content, source, embedding, metadata) -> UUID str.
+
+    embedding must be L2-normalized Vec<f64>. Returns None in legacy mode.
+    Python API order: (content, source, embedding, metadata=None) — confirmed C-4 contract.
+    Caller must invoke via: run_in_executor(faiss_store_with_embedding, mem, ...).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE or mem is None:
+        logger.warning(_LEGACY_MSG, "faiss_store_with_embedding")
+        return None
+    return mem.store_with_embedding(content, source, embedding, metadata)
+
+
+def faiss_retrieve_by_embedding(
+    mem: Any,
+    embedding: "list[float]",
+    top_k: int = 5,
+) -> "Optional[str]":
+    """Call mem.retrieve_by_embedding(embedding, top_k) -> JSON str.
+
+    JSON hit keys: {content, score, source, metadata} (C6).
+    Caller must invoke via: run_in_executor(faiss_retrieve_by_embedding, mem, ...).result(timeout=5)
+    """
+    if not WHEEL_AVAILABLE or mem is None:
+        logger.warning(_LEGACY_MSG, "faiss_retrieve_by_embedding")
+        return None
+    return mem.retrieve_by_embedding(embedding, top_k)

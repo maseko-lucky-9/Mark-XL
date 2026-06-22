@@ -163,6 +163,36 @@ impl PyFAISSMemory {
             .clear()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
+
+    #[pyo3(signature = (content, source, embedding, metadata=None))]
+    fn store_with_embedding(
+        &self,
+        content: &str,
+        source: &str,
+        embedding: Vec<f64>,
+        metadata: Option<&str>,
+    ) -> PyResult<String> {
+        let meta = metadata
+            .map(|m| serde_json::from_str(m))
+            .transpose()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(e.to_string()))?;
+        self.inner
+            .store_with_embedding(content, source, meta.as_ref(), &embedding)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    #[pyo3(signature = (embedding, top_k=5))]
+    fn retrieve_by_embedding(
+        &self,
+        embedding: Vec<f64>,
+        top_k: usize,
+    ) -> PyResult<String> {
+        let results = self
+            .inner
+            .retrieve_by_embedding(&embedding, top_k)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        Ok(serde_json::to_string(&results).unwrap_or_default())
+    }
 }
 
 #[pyclass(name = "ColBERTMemory")]

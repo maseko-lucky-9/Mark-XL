@@ -89,3 +89,17 @@ def get_security_config(key: str, default=None):
         return default
     except Exception:
         return default
+
+
+def get_embedding_model() -> str:
+    """Return the embedding model from config/flags.json; defaults to 'nomic-embed-text'.
+
+    Reads directly from the config dict without calling get_flag.
+    """
+    try:
+        if _FLAGS_FILE.exists():
+            data = json.loads(_FLAGS_FILE.read_text(encoding="utf-8"))
+            return str(data.get("embedding_model", "nomic-embed-text"))
+        return "nomic-embed-text"
+    except Exception:
+        return "nomic-embed-text"
