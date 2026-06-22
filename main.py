@@ -637,6 +637,20 @@ class JarvisLocal:
     def __init__(self, ui: JarvisUI):
         self.ui               = ui
         self._config          = _load_config()
+
+        # WO-1: optional mark_xl_rust wheel gate. With the flag OFF (default),
+        # nothing below reads self._rust, so behavior is byte-identical to the
+        # legacy baseline (AC4). Wheel-backed primitives are wired in WO-2/3/4/5.
+        self._rust = None
+        try:
+            from memory.config_manager import get_flag
+            from core.mark_xl_rust_adapter import WHEEL_AVAILABLE
+            if WHEEL_AVAILABLE and get_flag("use_rust_wheel"):
+                from core.mark_xl_rust_adapter import get_loop_guard  # noqa: F401
+                self._rust = True
+        except Exception:
+            self._rust = None
+
         self._stt             = None
         self._tts             = None
         self._tts_ready       = threading.Event()   # set when TTS engine is loaded

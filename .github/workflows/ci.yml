@@ -1,14 +1,29 @@
-name: CI — WO-0 Foundations
+name: CI
 
 on:
   push:
-    branches: ["wo-0-foundations", "main"]
+    branches: ["wo-0-foundations", "wo-1-rust-wheel", "main"]
   pull_request:
     branches: ["main"]
 
+# Least-privilege default for all jobs (supply-chain hardening). Jobs that need
+# more (none here) opt up explicitly.
+permissions:
+  contents: read
+
+# Pinned action SHAs (supply-chain hardening). Comments record the human-readable tag.
+#   actions/checkout        @ v4.2.2  -> 11bd71901bbe5b1630ceea73d27597364c9af683
+#   actions/setup-python    @ v5.3.0  -> 0b93645e9fea7318ecaed2b359559ac225c90a2b
+#   dtolnay/rust-toolchain  @ 1.88    -> 98e1b82157cd469e843cb7f524c1313b4ad9492c
+#   PyO3/maturin-action     @ v1.51.0 -> e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
+#   actions/upload-artifact @ v7.0.1  -> 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
-  # Job 1: test — required, 12 matrix legs must all pass
+  # Job 1: test — required, 12 matrix legs must all pass (WO-0 baseline + WO-1).
+  # The wheel is OPTIONAL, so these legs do NOT build it: they prove the legacy
+  # path (flag-OFF, wheel-absent) stays green. WO-1 adapter tests skipif-guard
+  # themselves when the wheel is absent.
   # ─────────────────────────────────────────────────────────────────────────
   test:
     name: "Test (${{ matrix.os }} / py${{ matrix.python }})"
@@ -23,10 +38,10 @@ jobs:
       QT_QPA_PLATFORM: offscreen
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python ${{ matrix.python }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: ${{ matrix.python }}
 
@@ -55,24 +70,95 @@ jobs:
           QT_QPA_PLATFORM: offscreen
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Job 2: rust-wheel-placeholder — non-blocking stub (WO-1 activates real build)
+  # Job 2: rust-wheel — REAL maturin build of the vendored mark_xl_rust wheel
+  # (WO-1 activates this; replaces the WO-0 placeholder).
+  #
+  # Builds the abi3 wheel on the three NOW-supported targets:
+  #   macos-14       → Apple Silicon (arm64)   ← primary macOS target
+  #   ubuntu-latest  → x86_64-linux
+  #   windows-latest → x86_64-windows
+  # x86 macOS (macos-13 / Intel) is DEFERRED: GitHub Intel runners are scarce;
+  # build it later by cross-compiling on the arm64 runner
+  # (`--target x86_64-apple-darwin`, test under Rosetta). Not a WO-1 blocker.
+  #
+  # The Rust toolchain is pinned to 1.88 (the workspace rust-toolchain.toml also
+  # pins 1.88; dtolnay honours it). After the build, an import-smoke step proves
+  # `import mark_xl_rust` works and the agent/security/storage classes are present.
   # ─────────────────────────────────────────────────────────────────────────
-  rust-wheel-placeholder:
-    name: "Rust wheel placeholder (non-blocking)"
-    runs-on: ubuntu-latest
-    continue-on-error: true
+  rust-wheel:
+    name: "Rust wheel (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install Rust 1.88
-        uses: dtolnay/rust-toolchain@1.88
+      - name: Set up Python 3.11
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.11"
 
-      - name: Rust build placeholder (seam for WO-1)
-        run: echo "Rust wheel build placeholder — WO-1 activates maturin here"
+      - name: Install Rust 1.88 (matches rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
+
+      - name: Build mark_xl_rust abi3 wheel (maturin)
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          # The vendored OpenJarvis workspace lives under mark-xl-rust-fork/;
+          # the PyO3 binding crate (the wheel) is its openjarvis-python member.
+          working-directory: mark-xl-rust-fork/crates/openjarvis-python
+          args: --release --out ../../../dist
+          # manylinux: off → build on the HOST runner (no Docker container) on all
+          # three OSes, so the host-installed dtolnay 1.88 toolchain is honoured
+          # uniformly (a container would ignore it). WO-1 is a build-gate +
+          # same-runner import-smoke, not PyPI distribution — real manylinux-portable
+          # Linux wheels belong to WO-6 packaging. --out resolves to repo-root dist/.
+          manylinux: "off"
+          # sccache caches compiled crates across runs (helps run #2+; the first
+          # cold build of 16 crates on a pristine runner is genuinely 20-40 min).
+          sccache: true
+
+      - name: Install the built wheel + import smoke
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --no-index --find-links dist mark_xl_rust
+          python - <<'PY'
+          import mark_xl_rust as m
+          assert m.__name__ == "mark_xl_rust", m.__name__
+          names = [n for n in dir(m) if not n.startswith("_")]
+          # agent + security + storage classes must be present (AC2)
+          for cls in ("SimpleAgent", "LoopGuard", "SecretScanner", "SQLiteMemory"):
+              assert cls in names, f"missing {cls}"
+          print(f"import OK — {len(names)} exported names")
+          PY
+
+      - name: Install headless Qt deps (Linux only, for the adapter test)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libportaudio2
+
+      - name: Run adapter tests against the freshly-built wheel (AC5/AC6 on CI)
+        shell: bash
+        run: |
+          python -m pip install -r requirements.txt pytest pytest-mock
+          # On Linux the X-socket/PortAudio deps differ per runner; the wheel-present
+          # adapter + GIL no-freeze tests only need a headless Qt + the wheel.
+          QT_QPA_PLATFORM=offscreen python -m pytest tests/test_rust_adapter.py -q
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mark_xl_rust-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
 
   # ─────────────────────────────────────────────────────────────────────────
-  # Job 3: import-smoke — exits 0 when mark_xl_rust wheel is absent (expected in WO-0)
+  # Job 3: import-smoke — proves the app tolerates an ABSENT wheel (legacy mode).
+  # The adapter's try-import must not raise; the factory must return None with
+  # the wheel absent (AC3). Independent of whether the wheel job succeeds.
   # ─────────────────────────────────────────────────────────────────────────
   import-smoke:
     name: "Import smoke (wheel absent OK)"
@@ -80,27 +166,27 @@ jobs:
     needs: test
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
 
-      - name: Install EGL dependency
-        run: sudo apt-get update && sudo apt-get install -y libegl1
+      - name: Install system libs
+        # Match the test job: libegl1 (headless Qt), libportaudio2 (core/tts.py
+        # imports sounddevice at load). Representative env so an import failure
+        # here means the wheel is the cause, not a missing transitive dep.
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libportaudio2
 
-      - name: Install base dependencies
-        run: pip install PyQt6
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Import smoke (absent wheel exits 0)
+      - name: Adapter degrades gracefully when wheel is absent
         run: |
           python -c "
-          try:
-              import mark_xl_rust
-              print('mark_xl_rust imported OK')
-          except ImportError:
-              import sys
-              print('mark_xl_rust absent (expected in WO-0) — OK')
-              sys.exit(0)
+          import core.mark_xl_rust_adapter as a
+          assert a.WHEEL_AVAILABLE is False, 'wheel should be absent in this job'
+          assert a.get_loop_guard() is None, 'factory must return None in legacy mode'
+          print('adapter legacy-mode OK (wheel absent, no raise)')
           "

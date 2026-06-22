@@ -1,0 +1,5 @@
+# Build artifacts for the vendored Rust workspace — never commit.
+target/
+*.so
+*.dylib
+*.pyd
