@@ -221,12 +221,7 @@ _OS_LAUNCHERS = {
     "Linux":   _launch_linux,
 }
 
-def open_app(
-    parameters=None,
-    response=None,
-    player=None,
-    session_memory=None,
-) -> str:
+def open_app(parameters, player=None, speak=None, **kwargs) -> str:
     app_name = (parameters or {}).get("app_name", "").strip()
 
     if not app_name:

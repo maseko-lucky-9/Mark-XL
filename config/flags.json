@@ -1,0 +1,7 @@
+{
+  "use_rust_wheel": false,
+  "use_tool_registry": false,
+  "enable_security_gates": false,
+  "enable_memory_v2": false,
+  "enable_loopguard": false
+}

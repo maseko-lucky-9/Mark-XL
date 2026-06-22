@@ -1,0 +1,11 @@
+# Phase 3 Reflection (Design / `plan`) — RARV
+
+- **Read the live dispatchers before designing, not the spec's prose.** The three load-bearing inputs (executor has NO `player` param at `agent/executor.py:171`; the non-uniform §B patch matrix; planner feeds the executor so a standalone `agent_task` would raise post-B3) were all re-confirmed against code before authoring. The design freezes `_call_tool(tool, parameters, player=None, speak=None)` + a 2-call-site `speak=` keyword fix (lines 300, 340 only — analysis §3's "(300, 340, dispatch)" was conservative; there is no third dispatch site).
+
+- **The flag-storage decision was driven by THIS phase's own gate.** Flags went into a dedicated `config/flags.json` (not `api_keys.json`) specifically to keep the inert flag rail OFF the secrets surface that the Pre-Flight HARD-FAIL gate scans — a lower-risk justification than co-location, and it leaves `load_api_keys()`/`is_configured()` byte-for-byte unaffected.
+
+- **Banned-stack needed a pre-existing-vs-introduced distinction, or it false-fails.** `torch`/`transformers` already live in the upstream STT/TTS stack (`main.py`, `core/stt.py`, `core/tts.py`, `core/installer.py`); the WO-0 gate is "no NEW banned deps introduced," not "purge the inherited voice stack." `ToolExecutor`/`EventBus` appear only in spec/constitution ban prose, never as code imports. Pinning this in the security-auditor prompt prevented a spurious FAIL.
+
+- **A real spec defect surfaced but is NOT off-rails.** spec.md TAS-5/AC3's "(and `agent_task`)" parenthetical contradicts the verified Decision C (adding `agent_task` to the planner manufactures the exact post-B3 raise B3 is fixing). The RAISE edge is tied to `scope_status == exceeds`; scope is `within`, so this is a CARRY-FORWARD to Phase 4 (B4 asserts `file_processor` ONLY), not an escalation. Recommend Phase 1 reconcile the stale prose.
+
+- **Verify the primary deliverable directly, not by proxy.** Spot-checking the contract + ADR (both faithful) said nothing about design.md's required sections; a direct grep confirmed `## Lessons Applied`, the module-by-module plan, the AC->test map, R-1's mitigation (`**kwargs` absorption + the TAS-1 dual-path routing test), and the CI matrix actually landed. Closed the Phase-1-flagged "a fresh planner could regress facts" loop on the biggest file.

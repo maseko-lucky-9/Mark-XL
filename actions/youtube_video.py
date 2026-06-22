@@ -386,10 +386,9 @@ _ACTION_MAP = {
 
 def youtube_video(
     parameters:     dict,
-    response=None,
     player=None,
-    session_memory=None,
     speak=None,
+    **kwargs
 ) -> str:
     params = parameters or {}
     action = params.get("action", "play").lower().strip()

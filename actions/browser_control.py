@@ -812,9 +812,9 @@ _registry = _SessionRegistry()
 
 def browser_control(
     parameters:    dict = None,
-    response=None,
     player=None,
-    session_memory=None,
+    speak=None,
+    **kwargs
 ) -> str:
     if not _PLAYWRIGHT_OK:
         msg = (

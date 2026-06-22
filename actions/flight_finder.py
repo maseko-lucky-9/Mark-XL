@@ -281,7 +281,7 @@ def _save_to_desktop(content: str, origin: str, destination: str) -> str:
     return str(filepath)
 
 
-def flight_finder(parameters: dict, player=None, speak=None) -> str:
+def flight_finder(parameters: dict, player=None, speak=None, **kwargs) -> str:
     params = parameters or {}
 
     origin      = params.get("origin",      "").strip()

@@ -1,0 +1,70 @@
+{
+  "state_version": "1.0",
+  "run_id": "wo-0-foundations",
+  "work_order": "WO-0",
+  "repo": "/Users/ltmas/Repo/agents/mark-xl",
+  "branch": "wo-0-foundations",
+  "base": "origin/main@fb46b5e",
+  "intake": {
+    "complexity": "Complex",
+    "dual_client": false
+  },
+  "current_phase": 4,
+  "phases": {
+    "0_constitution_intake": "completed",
+    "1_planning": "completed",
+    "2_analyze": "completed",
+    "3_design": "completed",
+    "4_development": "in_progress",
+    "5_implementation": "pending",
+    "6_testing": "pending",
+    "7_vnv": "pending",
+    "8_deploy": "pending"
+  },
+  "acceptance": {
+    "AC1_ci_green": "pending",
+    "AC2_dual_path_17_tools": "pending",
+    "AC3_4_bugs_fixed_with_regression": "pending",
+    "AC4_flag_off_equals_baseline": "pending"
+  },
+  "spec_corrections": [
+    "18 action tools -> 17 (agent_task/save_memory/shutdown_jarvis are main-only inline tools)"
+  ],
+  "carry_forward": {
+    "executor_needs_player_param": true,
+    "non_uniform_patch_matrix": "see analysis.md §4",
+    "agent_task_planner": "add only file_processor; defer agent_task",
+    "flags_file": "config/flags.json (5 flags, all OFF)",
+    "executor_call_sites": "executor.py:300,340 pass speak= as keyword"
+  },
+  "preflight": {
+    "secrets_status": "clean",
+    "banned_stack": "pass",
+    "scope": "within",
+    "risk_tier": "medium"
+  },
+  "development": {
+    "tasks_total": 17,
+    "tasks_file": "pipeline/tasks.md",
+    "spine": "T01|T02-05->T06->T07->T08->T09->T10-17",
+    "tasks": {
+      "T01": {"status": "completed", "files_changed": ["memory/config_manager.py", "config/flags.json"]},
+      "T02": {"status": "completed", "files_changed": ["actions/open_app.py", "actions/web_search.py", "actions/weather_report.py", "actions/send_message.py", "actions/reminder.py"]},
+      "T03": {"status": "completed", "files_changed": ["actions/computer_settings.py", "actions/browser_control.py", "actions/file_controller.py", "actions/desktop.py", "actions/computer_control.py"]},
+      "T04": {"status": "completed", "files_changed": ["actions/code_helper.py", "actions/dev_agent.py", "actions/screen_processor.py", "actions/youtube_video.py"]},
+      "T05": {"status": "completed", "files_changed": ["actions/file_processor.py", "actions/flight_finder.py", "actions/game_updater.py"]},
+      "T06": {"status": "completed", "files_changed": ["agent/executor.py"]},
+      "T07": {"status": "completed", "files_changed": ["main.py"]},
+      "T08": {"status": "completed", "files_changed": ["agent/planner.py"]},
+      "T09": {"status": "completed", "files_changed": ["tests/conftest.py", "tests/test_conftest_smoke.py"]},
+      "T10": {"status": "in_progress"},
+      "T11": {"status": "in_progress"},
+      "T12": {"status": "in_progress"},
+      "T13": {"status": "pending"},
+      "T14": {"status": "pending"},
+      "T15": {"status": "pending"},
+      "T16": {"status": "in_progress"},
+      "T17": {"status": "in_progress"}
+    }
+  }
+}

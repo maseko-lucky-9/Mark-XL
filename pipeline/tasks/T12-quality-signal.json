@@ -1,0 +1,11 @@
+{
+  "taskId": "T12",
+  "timestamp": "2026-06-20T22:48:09Z",
+  "buildPassed": true,
+  "typecheckPassed": true,
+  "testsPassed": true,
+  "testsAdded": 2,
+  "testCommand": "QT_QPA_PLATFORM=offscreen .venv-mac/bin/pytest tests/test_regressions.py -v",
+  "testOutput": "tests/test_regressions.py::test_b1_flight_finder_speak_forwarded PASSED\ntests/test_regressions.py::test_b1_flight_finder_call_with_args PASSED\n2 passed in 0.16s",
+  "filesChanged": ["tests/test_regressions.py"]
+}

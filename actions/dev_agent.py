@@ -494,10 +494,9 @@ def _build_project(
 
 def dev_agent(
     parameters: dict,
-    response=None,
     player=None,
-    session_memory=None,
     speak=None,
+    **kwargs
 ) -> str:
     p            = parameters or {}
     description  = p.get("description", "").strip()

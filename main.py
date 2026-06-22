@@ -811,44 +811,44 @@ class JarvisLocal:
         result = "Done."
         try:
             if name == "open_app":
-                r = open_app(parameters=args, response=None, player=self.ui)
+                r = open_app(parameters=args, player=self.ui, speak=self.speak)
                 result = r or f"Opened {args.get('app_name')}."
 
             elif name == "weather_report":
-                r = weather_action(parameters=args, player=self.ui)
+                r = weather_action(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Weather delivered."
 
             elif name == "browser_control":
-                r = browser_control(parameters=args, player=self.ui)
+                r = browser_control(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "file_controller":
-                r = file_controller(parameters=args, player=self.ui)
+                r = file_controller(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "send_message":
-                r = send_message(parameters=args, response=None, player=self.ui, session_memory=None)
+                r = send_message(parameters=args, player=self.ui, speak=self.speak)
                 result = r or f"Message sent to {args.get('receiver')}."
 
             elif name == "reminder":
-                r = reminder(parameters=args, response=None, player=self.ui)
+                r = reminder(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Reminder set."
 
             elif name == "youtube_video":
-                r = youtube_video(parameters=args, response=None, player=self.ui)
+                r = youtube_video(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "screen_process":
                 # Synchronous call — returns analysis text which the LLM can speak
-                r = screen_process(parameters=args, response=None, player=self.ui, session_memory=None)
+                r = screen_process(parameters=args, player=self.ui, speak=self.speak)
                 result = r if isinstance(r, str) and r else "Screen analyzed."
 
             elif name == "computer_settings":
-                r = computer_settings(parameters=args, response=None, player=self.ui)
+                r = computer_settings(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "desktop_control":
-                r = desktop_control(parameters=args, player=self.ui)
+                r = desktop_control(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "code_helper":
@@ -875,7 +875,7 @@ class JarvisLocal:
                 result = f"Task started (ID: {task_id})."
 
             elif name == "web_search":
-                r = web_search_action(parameters=args, player=self.ui)
+                r = web_search_action(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "file_processor":
@@ -885,7 +885,7 @@ class JarvisLocal:
                 result = r or "Done."
 
             elif name == "computer_control":
-                r = computer_control(parameters=args, player=self.ui)
+                r = computer_control(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "game_updater":
@@ -893,7 +893,7 @@ class JarvisLocal:
                 result = r or "Done."
 
             elif name == "flight_finder":
-                r = flight_finder(parameters=args, player=self.ui)
+                r = flight_finder(parameters=args, player=self.ui, speak=self.speak)
                 result = r or "Done."
 
             elif name == "shutdown_jarvis":

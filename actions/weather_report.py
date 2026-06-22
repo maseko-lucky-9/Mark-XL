@@ -2,11 +2,7 @@ import webbrowser
 from urllib.parse import quote_plus
 
 
-def weather_action(
-    parameters: dict,
-    player=None,
-    session_memory=None,
-) -> str:
+def weather_action(parameters, player=None, speak=None, **kwargs) -> str:
     city     = parameters.get("city")
     when     = parameters.get("time", "today")  
 
@@ -32,13 +28,6 @@ def weather_action(
 
     msg = f"Showing the weather for {city}, {when}, sir."
     _log(msg, player)
-
-    if session_memory:
-        try:
-            session_memory.set_last_search(query=search_query, response=msg)
-        except Exception:
-            pass
-
     return msg
 
 

@@ -1,0 +1,41 @@
+# Virtual environments
+.venv-mac/
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Pytest cache
+.pytest_cache/
+
+# Distribution / build
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Test + pipeline-orchestrator artifacts
+.coverage
+.pytest_cache/
+
+# pipeline-orchestrator run artifacts (kept on disk for resume, not part of the deliverable PR)
+pipeline/

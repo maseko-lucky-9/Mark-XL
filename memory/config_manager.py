@@ -52,3 +52,25 @@ def is_configured() -> bool:
         bool(cfg.get("stt_engine")) and
         bool(cfg.get("tts_engine"))
     )
+
+
+_FLAGS_FILE = Path(__file__).resolve().parent.parent / "config" / "flags.json"
+
+_FLAG_SCHEMA: dict = {
+    "use_rust_wheel":        False,
+    "use_tool_registry":     False,
+    "enable_security_gates": False,
+    "enable_memory_v2":      False,
+    "enable_loopguard":      False,
+}
+
+
+def get_flag(name: str, default: bool = False) -> bool:
+    """Return the flag value from config/flags.json; falls back to _FLAG_SCHEMA defaults."""
+    try:
+        if _FLAGS_FILE.exists():
+            data = json.loads(_FLAGS_FILE.read_text(encoding="utf-8"))
+            return bool(data.get(name, _FLAG_SCHEMA.get(name, default)))
+        return bool(_FLAG_SCHEMA.get(name, default))
+    except Exception:
+        return bool(_FLAG_SCHEMA.get(name, default))

@@ -224,10 +224,9 @@ def _call_vision(image_bytes: bytes, mime: str, user_text: str) -> str:
 
 def screen_process(
     parameters:     dict,
-    response=None,
     player=None,
-    session_memory=None,
     speak:          Optional[Callable[[str], None]] = None,
+    **kwargs
 ) -> str:
     """
     Capture screen or camera, analyse with Ollama vision model.
