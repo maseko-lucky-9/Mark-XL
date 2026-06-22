@@ -1,4 +1,4 @@
-"""MemoryV2 — feature-flagged retrieval layer (WO-4, P1 lexical lane).
+"""MemoryV2 — feature-flagged retrieval layer (WO-4, P1 lexical + P2 semantic lanes).
 
 This module is the *new* memory retrieval path for Mark-XL.  It runs **behind a
 feature flag** (``enable_memory_v2``).  The flag DECISION is made by the caller
@@ -7,12 +7,21 @@ flag is ON — therefore this module never reads the flag itself (AC10).  When t
 flag is OFF, ``MemoryV2`` is never constructed and the legacy
 ``memory.memory_manager`` path remains completely untouched.
 
-Phase 1 (this file)
--------------------
+Phase 1 (lexical lane)
+----------------------
 Lexical-only retrieval via the Rust ``SQLiteMemory`` (FTS5) store, reached
 exclusively through :mod:`core.mark_xl_rust_adapter` wrappers dispatched
 off-thread with ``run_in_executor(...).result(timeout=...)`` (AC8).  No embedder
 is used in P1 (``embedder=None``); the semantic lane is P2.
+
+Phase 2 (semantic lane)
+-----------------------
+When ``embedder`` is provided and ``adapter.has_semantic_bindings()`` is True and
+``embedder.is_available()`` is True, ``build_context`` uses the FAISSMemory
+(vector) store instead of FTS5.  Dim negotiation is live: ``dim = embedder.dim()``
+and the FAISS index is constructed at that dim.  A sentinel row
+(``source="__dim__"``) is written on first open and checked on subsequent opens;
+mismatch raises ``MemoryDimensionMismatch`` (AC3).  768 is NEVER hardcoded.
 
 Identity always-on (FR-4 / AC4)
 -------------------------------
@@ -53,6 +62,11 @@ _CONSTRUCT_TIMEOUT_S = 5
 
 # Idempotency sentinel for migrate() (source marker on a written-once leaf).
 _MIGRATED_SENTINEL_SOURCE = "__migrated__"
+
+# P2 semantic lane constants.
+_DIM_SENTINEL_SOURCE = "__dim__"
+_EMBED_TIMEOUT_S = 30           # off-thread embed timeout
+_FAISS_CONSTRUCT_TIMEOUT_S = 5
 
 
 class MemoryDimensionMismatch(ValueError):
@@ -141,6 +155,7 @@ class MemoryV2:
             base_data = _get_base_dir() / "data"
         # Cross-platform: always store/compare the path as a POSIX string (AC: xplat).
         self._db_path = (base_data / "memory_v2.db").as_posix()
+        self._faiss_db_path = (base_data / "memory_v2_faiss.db").as_posix()
 
     # ------------------------------------------------------------------
     # Public API
@@ -155,12 +170,70 @@ class MemoryV2:
 
         Returns a dict with keys ``context``, ``degraded``, ``guidance``,
         ``lane``.  The identity block is ALWAYS prepended outside the top-k
-        budget (AC4), so it survives ``top_k=1``.  Never raises; on any fault it
-        degrades to the legacy whole-blob formatter.
+        budget (AC4), so it survives ``top_k=1``.
+
+        Lane selection:
+        1. P2 semantic:  embedder provided AND adapter.has_semantic_bindings()
+                         AND embedder.is_available() → FAISSMemory vector search.
+        2. P1 lexical:   WHEEL_AVAILABLE → FTS5/BM25 via SQLiteMemory.
+        3. Legacy:       whole-blob fallback.
+
+        Never raises (except MemoryDimensionMismatch which is intentionally
+        propagated — AC3).  All other faults degrade to legacy.
         """
         identity_prefix = self.identity_prefix()
 
-        # P1 lexical lane requires the wheel. Without it, degrade to legacy.
+        # ------------------------------------------------------------------
+        # P2 semantic lane: requires embedder + semantic bindings in the wheel.
+        # ------------------------------------------------------------------
+        _guidance: Optional[str] = None
+        if (
+            self._embedder is not None
+            and adapter.has_semantic_bindings()
+        ):
+            embedder_available = False
+            try:
+                embedder_available = adapter.run_in_executor(
+                    self._embedder.is_available
+                ).result(timeout=5)
+            except Exception:
+                pass
+
+            if embedder_available:
+                try:
+                    topk_block = self._semantic_topk_block(query, top_k)
+                except MemoryDimensionMismatch:
+                    raise  # NEVER swallow dim-mismatch — it's actionable (AC3)
+                except Exception:
+                    logger.warning(
+                        "MemoryV2 semantic lane failed — falling back to lexical",
+                        exc_info=True,
+                    )
+                    topk_block = None
+
+                if topk_block is not None:
+                    if identity_prefix and topk_block:
+                        context = identity_prefix + "\n" + topk_block
+                    else:
+                        context = identity_prefix or topk_block
+                    return {
+                        "context": context,
+                        "degraded": False,
+                        "guidance": None,
+                        "lane": "semantic",
+                    }
+                # Semantic lane faulted → fall through to lexical.
+            else:
+                # Embedder requested but unavailable → emit guidance (AC5).
+                _guidance = "ollama pull nomic-embed-text"
+
+        elif self._embedder is not None and not adapter.has_semantic_bindings():
+            # Embedder supplied but wheel lacks FAISSMemory bindings → guidance.
+            _guidance = "ollama pull nomic-embed-text"
+
+        # ------------------------------------------------------------------
+        # P1 lexical lane: requires the wheel. Without it, degrade to legacy.
+        # ------------------------------------------------------------------
         if not adapter.WHEEL_AVAILABLE:
             return self._legacy_context()
 
@@ -182,17 +255,30 @@ class MemoryV2:
         return {
             "context": context,
             "degraded": False,
-            "guidance": None,
+            "guidance": _guidance,
             "lane": "lexical",
         }
 
     def migrate(self) -> dict:
         """Migrate legacy ``long_term.json`` leaves into the lexical store.
 
-        P1 only needs the no-op case: ``long_term.json`` is absent in the real
-        state, so this returns a skip result without writing anything.  The full
-        migration (``.bak`` first, per-leaf store, round-trip verify, idempotent
-        sentinel) is implemented for the present-file case.
+        Behavior (P1 + P2):
+
+        - **Absent** ``long_term.json`` → immediate no-op (``skipped="long_term.json absent"``).
+        - **Already migrated** → idempotent skip (``skipped="already migrated"``).
+        - **Present** → writes ``.bak`` FIRST (utf-8, as_posix), then flattens the
+          six legacy categories (``identity``, ``preferences``, ``projects``,
+          ``relationships``, ``wishes``, ``notes``) into per-leaf rows via
+          :meth:`_store_leaf` (SQLiteMemory / FTS5).  Each leaf is round-trip
+          verified.  A ``__migrated__`` sentinel is written last for idempotency.
+
+        **Lexical store only — this is correct for P2.**
+        Migration populates the SQLiteMemory (FTS5 / lexical) store.  The
+        FAISSMemory (vector / semantic) store is populated lazily: embeddings are
+        generated on-demand the first time each leaf is retrieved via the semantic
+        lane in :meth:`_semantic_topk_block`.  Therefore there is NO separate
+        semantic migration step — running :meth:`migrate` once is sufficient for
+        both P1 and P2.
 
         Returns ``{"migrated", "verified", "bak", "skipped"}``.
         """
@@ -306,6 +392,152 @@ class MemoryV2:
     # ------------------------------------------------------------------
     # Internal helpers (all wheel calls go through run_in_executor — AC8).
     # ------------------------------------------------------------------
+
+    # --- P2 semantic helpers -------------------------------------------
+
+    def _dim_sentinel_store(self, mem_faiss: Any, dim: int) -> None:
+        """Write the dim sentinel row (source='__dim__', content=str(dim))."""
+        try:
+            adapter.run_in_executor(
+                adapter.faiss_store_with_embedding,
+                mem_faiss,
+                str(dim),
+                _DIM_SENTINEL_SOURCE,
+                [0.0] * dim,  # zero vector for sentinel
+                None,
+            ).result(timeout=_STORE_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2 — failed to write dim sentinel", exc_info=True)
+
+    def _check_dim(self, mem_faiss: Any, live_dim: int) -> None:
+        """Raise MemoryDimensionMismatch if stored dim != live_dim.
+
+        Retrieves the ``__dim__`` sentinel row.  If absent, writes it (first
+        open).  If present and different from ``live_dim``, raises with an
+        actionable message naming both dims (AC3 / C4).
+        """
+        try:
+            raw = adapter.run_in_executor(
+                adapter.faiss_retrieve_by_embedding,
+                mem_faiss,
+                [0.0] * live_dim,
+                10,
+            ).result(timeout=_RETRIEVE_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2._check_dim — retrieve failed", exc_info=True)
+            return
+
+        if raw is None:
+            return
+
+        try:
+            hits = json.loads(raw)
+        except Exception:
+            return
+
+        stored_dim: Optional[int] = None
+        for hit in hits:
+            if isinstance(hit, dict) and hit.get("source") == _DIM_SENTINEL_SOURCE:
+                try:
+                    stored_dim = int(hit.get("content", ""))
+                except (ValueError, TypeError):
+                    pass
+                break
+
+        if stored_dim is None:
+            # First open — write the sentinel.
+            self._dim_sentinel_store(mem_faiss, live_dim)
+            return
+
+        if stored_dim != live_dim:
+            raise MemoryDimensionMismatch(
+                f"Embedding dimension mismatch: index was built at dim={stored_dim} "
+                f"but the live embedder reports dim={live_dim}. "
+                f"Remediation: delete the FAISS DB at '{self._faiss_db_path}' and re-index."
+            )
+
+    def _semantic_topk_block(self, query: str, top_k: int) -> Optional[str]:
+        """Embed query and retrieve top-k from FAISSMemory.
+
+        Returns the rendered block (possibly empty string if there are no
+        hits), or ``None`` on any fault (caller then falls back to lexical or
+        legacy).  Raises ``MemoryDimensionMismatch`` — never swallows it.
+        """
+        if self._embedder is None:
+            return None
+
+        # Get live dim off-thread (timeout 30s for cold Ollama start).
+        try:
+            live_dim = adapter.run_in_executor(
+                self._embedder.dim
+            ).result(timeout=_EMBED_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2 — embedder.dim() failed", exc_info=True)
+            return None
+
+        # Construct FAISSMemory off-thread.
+        try:
+            mem_faiss = adapter.run_in_executor(
+                adapter.faiss_memory, self._faiss_db_path, live_dim
+            ).result(timeout=_FAISS_CONSTRUCT_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2 — faiss_memory construction failed", exc_info=True)
+            return None
+
+        if mem_faiss is None:
+            return None
+
+        # Dim check (raises MemoryDimensionMismatch on mismatch — AC3).
+        self._check_dim(mem_faiss, live_dim)
+
+        # Embed the query off-thread.
+        try:
+            vecs = adapter.run_in_executor(
+                self._embedder.embed, [query]
+            ).result(timeout=_EMBED_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2 — embed(query) failed", exc_info=True)
+            return None
+
+        if not vecs:
+            return None
+        q_vec = vecs[0]
+
+        # Retrieve top-k from FAISS.
+        try:
+            raw = adapter.run_in_executor(
+                adapter.faiss_retrieve_by_embedding, mem_faiss, q_vec, top_k
+            ).result(timeout=_RETRIEVE_TIMEOUT_S)
+        except Exception:
+            logger.warning("MemoryV2 — faiss_retrieve_by_embedding failed", exc_info=True)
+            return None
+
+        if raw is None:
+            return None
+
+        try:
+            hits = json.loads(raw)
+        except Exception:
+            return None
+
+        if not isinstance(hits, list):
+            return ""
+
+        lines: list[str] = []
+        for hit in hits:
+            if isinstance(hit, dict):
+                # Skip the dim sentinel row from results.
+                if hit.get("source") == _DIM_SENTINEL_SOURCE:
+                    continue
+                content = hit.get("content")
+            else:
+                content = hit
+            if content:
+                lines.append(f"- {content}")
+        return "\n".join(lines)
+
+    # --- Lexical / SQLite helpers (P1) ----------------------------------
+
     def _construct_store(self) -> Optional[Any]:
         """Construct SQLiteMemory off-thread; return None on fault."""
         try:

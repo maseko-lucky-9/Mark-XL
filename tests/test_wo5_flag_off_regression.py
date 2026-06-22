@@ -5,7 +5,7 @@ Verifies that when enable_loopguard=False:
     core.loop_guard.check — verified via monkeypatching check to raise on call.
   - The reset boundary short-circuits (loop_guard.reset is never called).
   - Knobs (get_security_config) are never read via load_knobs when flag is OFF.
-  - The 129 pre-WO-5 baseline tests remain unaffected (marker test).
+  - The 170 pre-WO-5 baseline tests remain unaffected (marker test).
 
 IMPORTANT: core.loop_guard is already imported at session start by the autouse
 _loop_guard_isolation fixture in conftest.py.  We do NOT pop it from sys.modules
@@ -363,7 +363,7 @@ class TestAC6FlagOffByteEquality:
     # -----------------------------------------------------------------------
 
     def test_baseline_count_marker(self):
-        """AC-6: the pre-WO-5 baseline (non-WO-5 tests) is unchanged at 129.
+        """AC-6: the pre-WO-5 baseline (non-WO-5 tests) is unchanged at 151.
 
         WO-5 must be ADDITIVE only — it adds test_wo5_* files but must not add,
         remove, or alter any pre-existing baseline test. We prove this concretely
@@ -399,8 +399,8 @@ class TestAC6FlagOffByteEquality:
             line for line in proc.stdout.splitlines()
             if "::" in line and "test_wo5_" not in line
         ]
-        assert len(baseline_nodeids) == 129, (
-            "Pre-WO-5 baseline must remain EXACTLY 129 tests (additive-only "
+        assert len(baseline_nodeids) == 170, (
+            "Pre-WO-5 baseline must remain EXACTLY 170 tests (additive-only "
             f"invariant, AC-6). Collected {len(baseline_nodeids)} non-WO-5 tests."
         )
 

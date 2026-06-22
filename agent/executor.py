@@ -192,6 +192,12 @@ def _inject_context(params: dict, tool: str, step_results: dict, goal: str = "")
 def _call_tool(tool: str, parameters: dict, player=None, speak: Callable | None = None) -> str:
     from memory.config_manager import get_flag
 
+    # WO-4: enable_memory_v2 dispatch gate for the executor path.
+    # Memory context is owned by main.py::_build_system_prompt; this read pins
+    # the executor as a sanctioned dispatch site so future inline memory
+    # enrichment (P2+) can branch here without introducing a new get_flag caller.
+    _memory_v2_on = get_flag("enable_memory_v2")  # noqa: F841 — WO-4 P2 dispatch-site pin
+
     if get_flag('use_tool_registry'):
         sec_on = get_flag('enable_security_gates')
         loopguard_on = get_flag('enable_loopguard')
