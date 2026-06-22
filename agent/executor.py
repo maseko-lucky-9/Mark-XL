@@ -30,7 +30,7 @@ BASE_DIR = get_base_dir()
 # Code generation helper (replaces _run_generated_code with Gemini)
 # ---------------------------------------------------------------------------
 
-def _run_generated_code(description: str, speak: Callable | None = None) -> str:
+def _run_generated_code(description: str, speak: Callable | None = None, *, scan_enabled: bool = False, audit=None) -> str:
     if speak:
         speak("Writing custom code for this task, sir.")
 
@@ -67,6 +67,27 @@ def _run_generated_code(description: str, speak: Callable | None = None) -> str:
     try:
         code = call_llm_text(prompt, system=system)
         code = re.sub(r"```(?:python)?", "", code).strip().rstrip("`").strip()
+
+        # WO-3: injection scan before subprocess.run (scan_enabled only when flag-ON)
+        if scan_enabled:
+            from core import mark_xl_rust_adapter as _adapter
+            try:
+                _verdict = _adapter.run_in_executor(_adapter.injection_scan, code).result(timeout=10)
+            except Exception:
+                _verdict = {"is_clean": True, "threat_level": "low", "findings": []}
+            if _verdict.get("is_clean") is False and _verdict.get("threat_level") == "high":
+                if audit is not None:
+                    try:
+                        audit.write(
+                            "generated_code",
+                            {"description": description},
+                            "__BLOCKED_INJECTION__",
+                            confirm_required=True,
+                            approved=False,
+                        )
+                    except Exception:
+                        pass
+                raise RuntimeError("Blocked: generated code failed injection scan.")
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".py", delete=False, encoding="utf-8"
@@ -172,15 +193,47 @@ def _call_tool(tool: str, parameters: dict, player=None, speak: Callable | None 
     from memory.config_manager import get_flag
 
     if get_flag('use_tool_registry'):
+        sec_on = get_flag('enable_security_gates')
+
+        # WO-3 lazy ledger + SSRF cfg helpers (only constructed when sec_on)
+        _wo3_ledger = [None]
+
+        def _get_ledger():
+            if _wo3_ledger[0] is None:
+                from core.audit import AuditLedger
+                import os
+                base = Path(__file__).resolve().parent.parent
+                data_dir = base / "data"
+                data_dir.mkdir(parents=True, exist_ok=True)
+                _wo3_ledger[0] = AuditLedger((data_dir / "audit.db").as_posix())
+            return _wo3_ledger[0]
+
+        def _ssrf_cfg() -> bool:
+            from memory.config_manager import get_security_config
+            return bool(get_security_config("security_ssrf_allow_local_nav", False))
+
+        _no_confirm = lambda tool, preview, timeout=30: False
+
         # generated_code is its OWN explicit branch — NOT a registered tool, NOT unknown (WO-3 carry-forward)
         if tool == "generated_code":
             description = parameters.get("description", "")
             if not description:
                 raise ValueError("generated_code requires a 'description' parameter.")
-            return _run_generated_code(description, speak=speak)
+            return _run_generated_code(
+                description, speak=speak,
+                scan_enabled=sec_on,
+                audit=_get_ledger() if sec_on else None,
+            )
 
         from core.tool_registry import dispatch
-        result = dispatch(tool, parameters, player=player, speak=speak)
+        if sec_on:
+            from core.security_gate import run_gated
+            confirm_fn = player.ask_user_confirm if player else _no_confirm
+            result = run_gated(tool, parameters, player=player, speak=speak,
+                               confirm_fn=confirm_fn,
+                               audit=_get_ledger(), ssrf_local_nav=_ssrf_cfg())
+        else:
+            result = dispatch(tool, parameters, player=player, speak=speak)
         if tool == "screen_process":
             return result if isinstance(result, str) else "Screen captured and analyzed."
         return result or "Done."

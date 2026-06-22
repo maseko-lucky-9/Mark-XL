@@ -145,6 +145,67 @@ def check_ssrf(url: str) -> Optional[str]:
     return _rust.check_ssrf(url)
 
 
+def redact(text: str) -> str:
+    """Wrap ``mark_xl_rust.SecretScanner().redact(text)``.
+
+    Returns the input string with secrets replaced by ``[REDACTED:<pattern_name>]``
+    tokens.  Wheel absent → returns ``text`` unchanged and logs ``_LEGACY_MSG``.
+    """
+    if not WHEEL_AVAILABLE:
+        logger.warning(_LEGACY_MSG, "redact")
+        return text
+    try:
+        return _rust.SecretScanner().redact(text)
+    except Exception:
+        logger.warning(_LEGACY_MSG, "redact")
+        return text
+
+
+def injection_scan(text: str) -> dict:
+    """Wrap ``mark_xl_rust.InjectionScanner().scan(text)``.
+
+    The wheel returns a JSON string; this wrapper parses it and returns a
+    ``dict`` with keys ``is_clean`` (bool), ``threat_level`` (str), and
+    ``findings`` (list).  Block condition for callers:
+    ``is_clean is False and threat_level == "high"``.
+
+    Wheel absent OR scan/parse error → returns the SAFE clean verdict
+    ``{"is_clean": True, "threat_level": "low", "findings": []}`` and logs a
+    warning (fail-open on scanner FAULT, never on a positive detection).
+    """
+    _SAFE = {"is_clean": True, "threat_level": "low", "findings": []}
+    if not WHEEL_AVAILABLE:
+        logger.warning(_LEGACY_MSG, "injection_scan")
+        return _SAFE
+    try:
+        import json as _json
+        raw = _rust.InjectionScanner().scan(text)
+        return _json.loads(raw)
+    except Exception:
+        logger.warning("injection_scan failed — returning safe clean verdict")
+        return _SAFE
+
+
+def audit_verify_crosscheck(path: str) -> Optional[bool]:
+    """Optional independent cross-check via ``mark_xl_rust.AuditLogger``.
+
+    Calls ``AuditLogger(path).verify_chain()`` which returns
+    ``(bool, Optional[int])``.  Returns the bool component, or ``None``
+    when the wheel is absent.  NOT authoritative — ``core.audit.verify_chain``
+    is.
+    """
+    if not WHEEL_AVAILABLE:
+        logger.warning(_LEGACY_MSG, "audit_verify_crosscheck")
+        return None
+    try:
+        result = _rust.AuditLogger(path).verify_chain()
+        # Returns (bool, Optional[int]) per analysis §1
+        return result[0] if isinstance(result, tuple) else bool(result)
+    except Exception:
+        logger.warning(_LEGACY_MSG, "audit_verify_crosscheck")
+        return None
+
+
 def gil_probe(millis: int) -> Optional[Future]:
     """Submit the test-only ``_gil_probe`` to the pool (AC5).
 

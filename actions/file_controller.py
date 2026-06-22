@@ -494,6 +494,7 @@ def get_file_info(path: str, name: str = "") -> str:
         "  content: string — file content (for write/create_file)"
     ),
     is_planner_visible=True,
+    requires_confirm=True,
 )
 def file_controller(
     parameters: dict = None,

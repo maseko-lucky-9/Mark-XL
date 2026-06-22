@@ -513,6 +513,7 @@ def _build_project(
         "  language: string (optional)"
     ),
     is_planner_visible=True,
+    requires_confirm=True,
 )
 def dev_agent(
     parameters: dict,

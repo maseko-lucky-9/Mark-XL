@@ -485,6 +485,7 @@ def _screen_debug_action(description, file_path, player, speak=None) -> str:
         "  file_path: string (optional)"
     ),
     is_planner_visible=True,
+    requires_confirm=True,
 )
 def code_helper(
     parameters: dict,

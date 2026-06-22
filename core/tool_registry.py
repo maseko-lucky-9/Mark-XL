@@ -291,6 +291,7 @@ def _register_inline_specs() -> None:
             parameters={"type": "OBJECT", "properties": {}},
             planner_block="",
             is_planner_visible=False,
+            requires_confirm=True,
             inline=True,
         )
 

@@ -813,6 +813,7 @@ def _process_pptx(path: Path, action: str, params: dict, speak=None) -> str:
         "  output_path: string (optional) — where to save the result"
     ),
     is_planner_visible=True,
+    requires_confirm=True,
 )
 def file_processor(parameters: dict, player=None, speak=None, **kwargs) -> str:
     file_path_str = parameters.get("file_path", "").strip()

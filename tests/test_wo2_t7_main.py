@@ -38,7 +38,13 @@ def _run(name, args, monkeypatch, *, flag, dispatch=None):
     Returns (result, self_mock).
     """
     import memory.config_manager as cm
-    monkeypatch.setattr(cm, "get_flag", lambda *a, **k: flag)
+    # `flag` drives use_tool_registry; these tests exercise the registry dispatch
+    # path, so enable_security_gates is always OFF (the WO-3 security path is
+    # covered by its own dedicated tests).
+    monkeypatch.setattr(
+        cm, "get_flag",
+        lambda name, *a, **k: False if name == "enable_security_gates" else flag,
+    )
 
     if dispatch is not None:
         import core.tool_registry as tr

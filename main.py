@@ -833,6 +833,22 @@ class JarvisLocal:
         # call, so monkeypatching that attribute in tests takes effect here.
         from memory.config_manager import get_flag
 
+        # WO-3: module-level singletons (lazy, only when sec_on)
+        _wo3_ledger = [None]  # singleton AuditLedger; created on first sec_on use
+
+        def _get_ledger():
+            if _wo3_ledger[0] is None:
+                from core.audit import AuditLedger
+                import os
+                data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+                os.makedirs(data_dir, exist_ok=True)
+                _wo3_ledger[0] = AuditLedger(os.path.join(data_dir, "audit.db"))
+            return _wo3_ledger[0]
+
+        def _ssrf_cfg() -> bool:
+            from memory.config_manager import get_security_config
+            return bool(get_security_config("security_ssrf_allow_local_nav", False))
+
         result = "Done."
         try:
             # ── Inline arms (flag-independent) — must stay BEFORE the flag gate ──
@@ -853,6 +869,14 @@ class JarvisLocal:
 
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
+
+                # WO-3: confirm gate for shutdown_jarvis when security is ON
+                sec_on = get_flag('enable_security_gates')
+                if sec_on:
+                    if not self.ui.ask_user_confirm("shutdown_jarvis", "Shut down Jarvis?", 30):
+                        _get_ledger().write("shutdown_jarvis", {}, "__BLOCKED_CONFIRM__",
+                                            confirm_required=True, approved=False)
+                        return "Shutdown cancelled."
 
                 def _shutdown():
                     import time, os
@@ -876,7 +900,14 @@ class JarvisLocal:
                     # would otherwise rewrap into "Tool ... failed:").
                     result = f"Unknown tool: {name}"
                 else:
-                    r = dispatch(name, args, player=self.ui, speak=self.speak)
+                    sec_on = get_flag('enable_security_gates')
+                    if sec_on:
+                        from core.security_gate import run_gated
+                        r = run_gated(name, args, player=self.ui, speak=self.speak,
+                                      confirm_fn=self.ui.ask_user_confirm,
+                                      audit=_get_ledger(), ssrf_local_nav=_ssrf_cfg())
+                    else:
+                        r = dispatch(name, args, player=self.ui, speak=self.speak)
                     # Per-tool fallbacks — EXACT strings preserved from the baseline.
                     if name == "open_app":
                         result = r or f"Opened {args.get('app_name')}."
