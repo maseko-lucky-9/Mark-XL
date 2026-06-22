@@ -194,6 +194,7 @@ def _call_tool(tool: str, parameters: dict, player=None, speak: Callable | None 
 
     if get_flag('use_tool_registry'):
         sec_on = get_flag('enable_security_gates')
+        loopguard_on = get_flag('enable_loopguard')
 
         # WO-3 lazy ledger + SSRF cfg helpers (only constructed when sec_on)
         _wo3_ledger = [None]
@@ -224,6 +225,15 @@ def _call_tool(tool: str, parameters: dict, player=None, speak: Callable | None 
                 scan_enabled=sec_on,
                 audit=_get_ledger() if sec_on else None,
             )
+
+        if loopguard_on:
+            from core import loop_guard
+            mi, mp, pb = loop_guard.load_knobs()
+            loop_guard.get_guard(True, max_identical=mi, max_ping_pong=mp, poll_budget=pb)
+            reason = loop_guard.check(tool, parameters)
+            if reason is not None:
+                loop_guard.signal_loop(reason)
+                return f"Loop detected: {reason}"
 
         from core.tool_registry import dispatch
         if sec_on:
@@ -339,9 +349,15 @@ class AgentExecutor:
         completed_steps: list = []
         step_results:    dict = {}
 
+        # Reset LoopGuard state at the start of every execute() call so that
+        # background tasks never inherit trip counters from a previous execution.
+        from memory.config_manager import get_flag
+        if get_flag('enable_loopguard'):
+            from core import loop_guard
+            loop_guard.reset()
+
         # Consumer-gate: build registry-based planner prompt when flag is ON.
         # get_flag is imported here (never in planner.py — zero references there).
-        from memory.config_manager import get_flag
         if get_flag('use_tool_registry'):
             from core.tool_registry import build_planner_tool_block
             from agent.planner import build_planner_prompt

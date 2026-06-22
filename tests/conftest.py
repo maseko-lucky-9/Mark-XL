@@ -71,6 +71,28 @@ def thread_guard():
 
 
 # ---------------------------------------------------------------------------
+# LoopGuard isolation — autouse, function-scoped; resets module-level _GUARD
+# and _BRIDGE after every test so Rust wheel state never leaks between tests.
+# ---------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _loop_guard_isolation():
+    """Hard-reset core.loop_guard._GUARD and _BRIDGE before and after each test.
+
+    monkeypatch.setattr saves/restores the attribute value at the moment of the
+    call.  If a test initialises _GUARD (e.g. via _call_tool with loopguard ON),
+    any subsequent monkeypatch.setattr in a later test that captures the live
+    LoopGuard object and then "restores" it on teardown — polluting the next test.
+    This fixture bypasses that by directly writing None in both phases.
+    """
+    import core.loop_guard as lg
+    lg._GUARD = None
+    lg._BRIDGE = None
+    yield
+    lg._GUARD = None
+    lg._BRIDGE = None
+
+
+# ---------------------------------------------------------------------------
 # Registry snapshot — function-scoped fixture for tests that mutate _REGISTRY
 # (e.g. T11's D6 demo_tool registration test).
 # ---------------------------------------------------------------------------

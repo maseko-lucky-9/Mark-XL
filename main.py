@@ -662,6 +662,34 @@ class JarvisLocal:
 
         self.ui.on_text_command = self._on_text_command
 
+        # WO-5 / T10: wire the loop_detected signal to the UI slot.
+        # This is done after the UI is fully set up so Qt signal/slot
+        # connections are valid.  The import and connection are skipped
+        # when the flag is OFF to preserve the flag-off fast path.
+        self._wire_loopguard_signal()
+
+    # ------------------------------------------------------------------
+    # LoopGuard → UI signal wiring (WO-5 / T10)
+    # ------------------------------------------------------------------
+
+    def _wire_loopguard_signal(self) -> None:
+        """Connect loop_detected to the raise-free UI slot when flag is ON."""
+        from memory.config_manager import get_flag
+        if get_flag("enable_loopguard"):
+            from core import loop_guard
+            bridge = loop_guard.get_bridge()
+            bridge.loop_detected.connect(self._on_loop_detected)
+
+    def _on_loop_detected(self, reason: str) -> None:
+        """Raise-free slot — catches any error and logs it."""
+        try:
+            self.ui.write_log(f"[LoopGuard] {reason}")
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "_on_loop_detected slot error: %s", exc
+            )
+
     # ------------------------------------------------------------------
     # System prompt
     # ------------------------------------------------------------------
@@ -900,27 +928,40 @@ class JarvisLocal:
                     # would otherwise rewrap into "Tool ... failed:").
                     result = f"Unknown tool: {name}"
                 else:
-                    sec_on = get_flag('enable_security_gates')
-                    if sec_on:
-                        from core.security_gate import run_gated
-                        r = run_gated(name, args, player=self.ui, speak=self.speak,
-                                      confirm_fn=self.ui.ask_user_confirm,
-                                      audit=_get_ledger(), ssrf_local_nav=_ssrf_cfg())
-                    else:
-                        r = dispatch(name, args, player=self.ui, speak=self.speak)
-                    # Per-tool fallbacks — EXACT strings preserved from the baseline.
-                    if name == "open_app":
-                        result = r or f"Opened {args.get('app_name')}."
-                    elif name == "weather_report":
-                        result = r or "Weather delivered."
-                    elif name == "send_message":
-                        result = r or f"Message sent to {args.get('receiver')}."
-                    elif name == "reminder":
-                        result = r or "Reminder set."
-                    elif name == "screen_process":
-                        result = r if isinstance(r, str) and r else "Screen analyzed."
-                    else:
-                        result = r or "Done."
+                    # ── WO-5 T05: LoopGuard check (CP-1: runs first, independent) ──
+                    loopguard_on = get_flag('enable_loopguard')
+                    _loop_blocked = False
+                    if loopguard_on:
+                        from core import loop_guard
+                        mi, mp, pb = loop_guard.load_knobs()
+                        loop_guard.get_guard(True, max_identical=mi, max_ping_pong=mp, poll_budget=pb)
+                        reason = loop_guard.check(name, args)
+                        if reason is not None:
+                            loop_guard.signal_loop(reason)
+                            result = f"Loop detected: {reason}"
+                            _loop_blocked = True
+                    if not _loop_blocked:
+                        sec_on = get_flag('enable_security_gates')
+                        if sec_on:
+                            from core.security_gate import run_gated
+                            r = run_gated(name, args, player=self.ui, speak=self.speak,
+                                          confirm_fn=self.ui.ask_user_confirm,
+                                          audit=_get_ledger(), ssrf_local_nav=_ssrf_cfg())
+                        else:
+                            r = dispatch(name, args, player=self.ui, speak=self.speak)
+                        # Per-tool fallbacks — EXACT strings preserved from the baseline.
+                        if name == "open_app":
+                            result = r or f"Opened {args.get('app_name')}."
+                        elif name == "weather_report":
+                            result = r or "Weather delivered."
+                        elif name == "send_message":
+                            result = r or f"Message sent to {args.get('receiver')}."
+                        elif name == "reminder":
+                            result = r or "Reminder set."
+                        elif name == "screen_process":
+                            result = r if isinstance(r, str) and r else "Screen analyzed."
+                        else:
+                            result = r or "Done."
 
             # ── Flag-OFF: VERBATIM 17-arm baseline ladder — DO NOT REFACTOR ────
             else:
@@ -1042,6 +1083,13 @@ class JarvisLocal:
         # Tools whose output needs a second LLM round to summarise/interpret.
         # Everything else returns a user-ready string → speak directly.
         _NEEDS_LLM_ROUND = {"web_search", "screen_process", "agent_task"}
+
+        # Reset LoopGuard state at the start of each turn (before round loop)
+        # so cross-turn repeats never produce a false positive (AC-4).
+        from memory.config_manager import get_flag
+        if get_flag('enable_loopguard'):
+            from core import loop_guard
+            loop_guard.reset()
 
         MAX_TOOL_ROUNDS = 6
         for _round in range(MAX_TOOL_ROUNDS):
