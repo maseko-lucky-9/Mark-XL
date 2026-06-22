@@ -424,7 +424,8 @@ def test_d5_get_flag_allowlist_exact_set():
             continue
         try:
             if "get_flag" in f.read_text(encoding="utf-8"):
-                callers.append(str(f.relative_to(repo_root)))
+                # as_posix() forces '/' so the exact-set assertion holds on Windows.
+                callers.append(f.relative_to(repo_root).as_posix())
         except Exception:
             pass
     assert set(callers) == {"main.py", "agent/executor.py"}, (
