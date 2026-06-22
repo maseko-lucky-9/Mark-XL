@@ -4,5 +4,8 @@
   "enable_security_gates": false,
   "enable_memory_v2": false,
   "enable_loopguard": false,
-  "security_ssrf_allow_local_nav": false
+  "security_ssrf_allow_local_nav": false,
+  "loopguard_max_identical": 50,
+  "loopguard_max_ping_pong": 4,
+  "loopguard_poll_budget": 100
 }

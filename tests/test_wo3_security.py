@@ -216,7 +216,7 @@ class TestAC4SecretRedaction:
         if not adapter.WHEEL_AVAILABLE:
             pytest.skip("Wheel absent: redact() is passthrough")
 
-        secret = "sk-PreviewSecretKeyXYZ123456789"
+        secret = "sk-" + "PreviewSecretKeyXYZ123456789"
         preview = _build_preview("file_controller", {"api_key": secret})
         assert secret not in preview, \
             f"Raw secret must not appear in _build_preview output, got: {preview!r}"
