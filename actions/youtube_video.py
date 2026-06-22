@@ -9,6 +9,8 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote_plus
 
+from core.tool_registry import register_tool
+
 try:
     import requests
     _REQUESTS_OK = True
@@ -384,6 +386,30 @@ _ACTION_MAP = {
 }
 
 
+@register_tool(
+    name="youtube_video",
+    description=(
+        "Controls YouTube. Use for: playing videos, summarizing a video's content, "
+        "getting video info, or showing trending videos."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action": {"type": "STRING", "description": "play | summarize | get_info | trending"},
+            "query":  {"type": "STRING", "description": "Search query for play action"},
+            "save":   {"type": "BOOLEAN", "description": "Save summary to Notepad"},
+            "region": {"type": "STRING", "description": "Country code for trending e.g. TR, US"},
+            "url":    {"type": "STRING", "description": "Video URL for get_info action"},
+        },
+        "required": []
+    },
+    planner_block=(
+        "youtube_video\n"
+        "  action: \"play\" | \"summarize\" | \"trending\" (required)\n"
+        "  query: string (for play)"
+    ),
+    is_planner_visible=True,
+)
 def youtube_video(
     parameters:     dict,
     player=None,

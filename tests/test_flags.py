@@ -129,16 +129,15 @@ class TestStaticAssertions:
                 src = py_file.read_text(encoding="utf-8")
                 # Check for get_flag calls (simple string search sufficient for this gate)
                 if "get_flag" in src:
-                    callers.append(str(py_file.relative_to(repo_root)))
+                    # as_posix() forces forward slashes so the exact-set assertion below
+                    # holds on Windows (str() would yield 'agent\\executor.py' there).
+                    callers.append(py_file.relative_to(repo_root).as_posix())
             except Exception:
                 # Skip files that can't be read (e.g., binary)
                 pass
 
-        # Allowlist of sanctioned get_flag callers. main.py was added by WO-1 (AC4)
-        # to gate the optional mark_xl_rust wheel behind use_rust_wheel (default OFF).
-        sanctioned = ["main.py"]
-        assert callers == sanctioned, (
-            f"Only sanctioned production files may gate behaviour behind get_flag. "
-            f"Expected {sanctioned}, found {callers}. A new caller must be a reviewed "
-            f"feature-gate added to this allowlist."
+        assert set(callers) == {"main.py", "agent/executor.py"}, (
+            f"Sanctioned get_flag callers must be exactly {{main.py, agent/executor.py}}: "
+            f"main.py (WO-1 use_rust_wheel + WO-2 use_tool_registry) and "
+            f"agent/executor.py (WO-2 use_tool_registry). Callers found: {callers}"
         )

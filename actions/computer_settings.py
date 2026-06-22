@@ -7,6 +7,8 @@ import subprocess
 import platform
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 try:
     import pyautogui
     pyautogui.FAILSAFE = True
@@ -587,6 +589,30 @@ def _detect_action(description: str) -> dict:
         print(f"[Settings] Intent detection failed: {e}")
         return {"action": description.lower().replace(" ", "_"), "value": None}
 
+@register_tool(
+    name="computer_settings",
+    description=(
+        "Controls the computer: volume, brightness, window management, keyboard shortcuts, "
+        "typing text on screen, closing apps, fullscreen, dark mode, WiFi, restart, shutdown, "
+        "scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":      {"type": "STRING", "description": "The action to perform"},
+            "description": {"type": "STRING", "description": "Natural language description"},
+            "value":       {"type": "STRING", "description": "Optional value"}
+        },
+        "required": []
+    },
+    planner_block=(
+        "computer_settings\n"
+        "  action: string (required)\n"
+        "  description: string — natural language description\n"
+        "  value: string (optional)"
+    ),
+    is_planner_visible=True,
+)
 def computer_settings(
     parameters: dict = None,
     player=None,

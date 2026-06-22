@@ -11,6 +11,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+from core.tool_registry import register_tool
+
 try:
     from playwright.async_api import (
         async_playwright,
@@ -810,6 +812,42 @@ class _SessionRegistry:
 
 _registry = _SessionRegistry()
 
+@register_tool(
+    name="browser_control",
+    description=(
+        "Controls any web browser. Use for: opening websites, searching the web, "
+        "clicking elements, filling forms, scrolling, screenshots, navigation."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":      {"type": "STRING", "description": "go_to | search | click | type | scroll | fill_form | smart_click | smart_type | get_text | get_url | press | new_tab | close_tab | screenshot | back | forward | reload | switch | list_browsers | close | close_all"},
+            "browser":     {"type": "STRING", "description": "chrome | edge | firefox | opera | operagx | brave | vivaldi | safari"},
+            "url":         {"type": "STRING", "description": "URL for go_to / new_tab action"},
+            "query":       {"type": "STRING", "description": "Search query"},
+            "engine":      {"type": "STRING", "description": "google | bing | duckduckgo | yandex"},
+            "selector":    {"type": "STRING", "description": "CSS selector for click/type"},
+            "text":        {"type": "STRING", "description": "Text to click or type"},
+            "description": {"type": "STRING", "description": "Element description for smart_click/smart_type"},
+            "direction":   {"type": "STRING", "description": "up | down for scroll"},
+            "amount":      {"type": "INTEGER", "description": "Scroll amount in pixels"},
+            "key":         {"type": "STRING", "description": "Key name for press"},
+            "path":        {"type": "STRING", "description": "Save path for screenshot"},
+            "incognito":   {"type": "BOOLEAN", "description": "Open in private/incognito mode"},
+            "clear_first": {"type": "BOOLEAN", "description": "Clear field before typing"},
+        },
+        "required": ["action"]
+    },
+    planner_block=(
+        "browser_control\n"
+        "  action: \"go_to\" | \"search\" | \"click\" | \"type\" | \"scroll\" | \"get_text\" | \"press\" | \"close\" (required)\n"
+        "  url: string (for go_to)\n"
+        "  query: string (for search)\n"
+        "  text: string (for click/type)\n"
+        "  direction: \"up\" | \"down\" (for scroll)"
+    ),
+    is_planner_visible=True,
+)
 def browser_control(
     parameters:    dict = None,
     player=None,

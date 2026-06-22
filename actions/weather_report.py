@@ -1,7 +1,20 @@
 import webbrowser
 from urllib.parse import quote_plus
 
+from core.tool_registry import register_tool
 
+
+@register_tool(
+    name="weather_report",
+    description="Gives the weather report to user",
+    parameters={
+        "type": "OBJECT",
+        "properties": {"city": {"type": "STRING", "description": "City name"}},
+        "required": ["city"]
+    },
+    planner_block="weather_report\n  city: string (required)",
+    is_planner_visible=True,
+)
 def weather_action(parameters, player=None, speak=None, **kwargs) -> str:
     city     = parameters.get("city")
     when     = parameters.get("time", "today")  

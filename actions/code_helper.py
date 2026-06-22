@@ -5,6 +5,8 @@ import re
 import time
 from pathlib import Path
 
+from core.tool_registry import register_tool
+
 
 def get_base_dir():
     if getattr(sys, "frozen", False):
@@ -457,6 +459,33 @@ def _screen_debug_action(description, file_path, player, speak=None) -> str:
         return f"Screen analysis failed: {e}"
 
 
+@register_tool(
+    name="code_helper",
+    description="Writes, edits, explains, runs, or builds code files.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":      {"type": "STRING", "description": "write | edit | explain | run | build | auto"},
+            "description": {"type": "STRING", "description": "What the code should do"},
+            "language":    {"type": "STRING", "description": "Programming language"},
+            "output_path": {"type": "STRING", "description": "Where to save the file"},
+            "file_path":   {"type": "STRING", "description": "Path to existing file"},
+            "code":        {"type": "STRING", "description": "Raw code string for explain"},
+            "args":        {"type": "STRING", "description": "CLI arguments"},
+            "timeout":     {"type": "INTEGER", "description": "Execution timeout in seconds"},
+        },
+        "required": ["action"]
+    },
+    planner_block=(
+        "code_helper\n"
+        '  action: "write" | "edit" | "run" | "explain" (required)\n'
+        "  description: string (required)\n"
+        "  language: string (optional)\n"
+        "  output_path: string (optional)\n"
+        "  file_path: string (optional)"
+    ),
+    is_planner_visible=True,
+)
 def code_helper(
     parameters: dict,
     player=None,

@@ -1,4 +1,5 @@
 #computer_control.py
+from core.tool_registry import register_tool
 import io
 import json
 import re
@@ -350,6 +351,42 @@ def _screen_find(description: str) -> tuple[int, int] | None:
 
     return None
 
+@register_tool(
+    name="computer_control",
+    description="Direct computer control: type, click, hotkeys, scroll, move mouse, screenshots, find elements on screen.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":      {"type": "STRING", "description": "type | smart_type | click | double_click | right_click | hotkey | press | scroll | move | copy | paste | screenshot | wait | clear_field | focus_window | screen_find | screen_click | random_data | user_data"},
+            "text":        {"type": "STRING", "description": "Text to type or paste"},
+            "x":           {"type": "INTEGER", "description": "X coordinate"},
+            "y":           {"type": "INTEGER", "description": "Y coordinate"},
+            "keys":        {"type": "STRING", "description": "Key combination e.g. 'ctrl+c'"},
+            "key":         {"type": "STRING", "description": "Single key e.g. 'enter'"},
+            "direction":   {"type": "STRING", "description": "up | down | left | right"},
+            "amount":      {"type": "INTEGER", "description": "Scroll amount"},
+            "seconds":     {"type": "NUMBER",  "description": "Seconds to wait"},
+            "title":       {"type": "STRING",  "description": "Window title for focus_window"},
+            "description": {"type": "STRING",  "description": "Element description"},
+            "type":        {"type": "STRING",  "description": "Data type for random_data"},
+            "field":       {"type": "STRING",  "description": "Field for user_data"},
+            "clear_first": {"type": "BOOLEAN", "description": "Clear field before typing"},
+            "path":        {"type": "STRING",  "description": "Save path for screenshot"},
+        },
+        "required": ["action"]
+    },
+    planner_block=(
+        "computer_control\n"
+        '  action: "type" | "click" | "hotkey" | "press" | "scroll" | "screenshot" | "screen_find" | "screen_click" (required)\n'
+        "  text: string (for type)\n"
+        "  x, y: int (for click)\n"
+        '  keys: string (for hotkey, e.g. "ctrl+c")\n'
+        "  key: string (for press)\n"
+        '  direction: "up" | "down" (for scroll)\n'
+        "  description: string (for screen_find/screen_click)"
+    ),
+    is_planner_visible=True,
+)
 def computer_control(
     parameters: dict,
     player=None,

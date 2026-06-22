@@ -68,3 +68,21 @@ def thread_guard():
     for t in new_threads:
         if t.daemon:
             t.join(timeout=0.5)  # best-effort; daemon threads die with the process anyway
+
+
+# ---------------------------------------------------------------------------
+# Registry snapshot — function-scoped fixture for tests that mutate _REGISTRY
+# (e.g. T11's D6 demo_tool registration test).
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def registry_snapshot():
+    """Snapshot _REGISTRY before the test and restore it after.
+
+    Prevents inline-spec or demo-tool registrations inside one test from
+    polluting the global _REGISTRY state seen by subsequent tests.
+    """
+    from core.tool_registry import _REGISTRY
+    snapshot = dict(_REGISTRY)
+    yield
+    _REGISTRY.clear()
+    _REGISTRY.update(snapshot)

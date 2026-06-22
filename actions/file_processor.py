@@ -26,6 +26,7 @@ from pathlib import Path
 from datetime import datetime
 
 from core.llm_client import call_llm_text as _llm_text
+from core.tool_registry import register_tool
 
 
 def _gemini_client():
@@ -774,6 +775,45 @@ def _process_pptx(path: Path, action: str, params: dict, speak=None) -> str:
 
     return f"Unknown PPTX action: '{action}'. Try: summarize, extract_text, analyze"
 
+@register_tool(
+    name="file_processor",
+    description=(
+        "Processes any file that the user has uploaded or dropped onto the interface. "
+        "Supports: images, PDFs, Word docs, CSV/Excel, JSON, code files, audio, video, archives."
+    ),
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "file_path":   {"type": "STRING",  "description": "Full path to the uploaded file"},
+            "action":      {"type": "STRING",  "description": "What to do with the file"},
+            "instruction": {"type": "STRING",  "description": "Free-form instruction"},
+            "format":      {"type": "STRING",  "description": "Target format for conversion"},
+            "width":       {"type": "INTEGER", "description": "Target width for image resize"},
+            "height":      {"type": "INTEGER", "description": "Target height for image resize"},
+            "scale":       {"type": "NUMBER",  "description": "Scale factor"},
+            "quality":     {"type": "INTEGER", "description": "Quality 1-100"},
+            "start":       {"type": "STRING",  "description": "Start time for trim"},
+            "end":         {"type": "STRING",  "description": "End time for trim"},
+            "timestamp":   {"type": "STRING",  "description": "Timestamp for video frame extraction"},
+            "column":      {"type": "STRING",  "description": "Column name for CSV filter/sort"},
+            "value":       {"type": "STRING",  "description": "Filter value"},
+            "condition":   {"type": "STRING",  "description": "Filter condition"},
+            "ascending":   {"type": "BOOLEAN", "description": "Sort order"},
+            "save":        {"type": "BOOLEAN", "description": "Save result to file"},
+            "destination": {"type": "STRING",  "description": "Output folder for archive extract"},
+        },
+        "required": []
+    },
+    planner_block=(
+        "file_processor\n"
+        "  file_path: string (required) — path to the file to process\n"
+        '  action: "summarize" | "translate" | "rewrite" | "extract" | "custom" (required)\n'
+        "  instruction: string (optional) — for custom actions\n"
+        "  language: string (optional) — for translate action\n"
+        "  output_path: string (optional) — where to save the result"
+    ),
+    is_planner_visible=True,
+)
 def file_processor(parameters: dict, player=None, speak=None, **kwargs) -> str:
     file_path_str = parameters.get("file_path", "").strip()
     if not file_path_str:

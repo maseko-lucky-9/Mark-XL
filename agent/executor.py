@@ -169,83 +169,101 @@ def _inject_context(params: dict, tool: str, step_results: dict, goal: str = "")
 # ---------------------------------------------------------------------------
 
 def _call_tool(tool: str, parameters: dict, player=None, speak: Callable | None = None) -> str:
-    if tool == "open_app":
-        from actions.open_app import open_app
-        return open_app(parameters=parameters, player=player, speak=speak) or "Done."
+    from memory.config_manager import get_flag
 
-    elif tool == "web_search":
-        from actions.web_search import web_search
-        return web_search(parameters=parameters, player=player, speak=speak) or "Done."
+    if get_flag('use_tool_registry'):
+        # generated_code is its OWN explicit branch — NOT a registered tool, NOT unknown (WO-3 carry-forward)
+        if tool == "generated_code":
+            description = parameters.get("description", "")
+            if not description:
+                raise ValueError("generated_code requires a 'description' parameter.")
+            return _run_generated_code(description, speak=speak)
 
-    elif tool == "game_updater":
-        from actions.game_updater import game_updater
-        return game_updater(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "browser_control":
-        from actions.browser_control import browser_control
-        return browser_control(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "file_controller":
-        from actions.file_controller import file_controller
-        return file_controller(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "code_helper":
-        from actions.code_helper import code_helper
-        return code_helper(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "dev_agent":
-        from actions.dev_agent import dev_agent
-        return dev_agent(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "screen_process":
-        from actions.screen_processor import screen_process
-        result = screen_process(parameters=parameters, player=player, speak=speak)
-        return result if isinstance(result, str) else "Screen captured and analyzed."
-
-    elif tool == "send_message":
-        from actions.send_message import send_message
-        return send_message(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "reminder":
-        from actions.reminder import reminder
-        return reminder(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "youtube_video":
-        from actions.youtube_video import youtube_video
-        return youtube_video(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "weather_report":
-        from actions.weather_report import weather_action
-        return weather_action(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "computer_settings":
-        from actions.computer_settings import computer_settings
-        return computer_settings(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "desktop_control":
-        from actions.desktop import desktop_control
-        return desktop_control(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "computer_control":
-        from actions.computer_control import computer_control
-        return computer_control(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "generated_code":
-        description = parameters.get("description", "")
-        if not description:
-            raise ValueError("generated_code requires a 'description' parameter.")
-        return _run_generated_code(description, speak=speak)
-
-    elif tool == "flight_finder":
-        from actions.flight_finder import flight_finder
-        return flight_finder(parameters=parameters, player=player, speak=speak) or "Done."
-
-    elif tool == "file_processor":
-        from actions.file_processor import file_processor
-        return file_processor(parameters=parameters, player=player, speak=speak) or "Done."
+        from core.tool_registry import dispatch
+        result = dispatch(tool, parameters, player=player, speak=speak)
+        if tool == "screen_process":
+            return result if isinstance(result, str) else "Screen captured and analyzed."
+        return result or "Done."
 
     else:
-        raise ValueError(f"Unknown tool: {tool}")
+        # VERBATIM baseline 17-arm ladder — DO NOT REFACTOR
+        if tool == "open_app":
+            from actions.open_app import open_app
+            return open_app(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "web_search":
+            from actions.web_search import web_search
+            return web_search(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "game_updater":
+            from actions.game_updater import game_updater
+            return game_updater(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "browser_control":
+            from actions.browser_control import browser_control
+            return browser_control(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "file_controller":
+            from actions.file_controller import file_controller
+            return file_controller(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "code_helper":
+            from actions.code_helper import code_helper
+            return code_helper(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "dev_agent":
+            from actions.dev_agent import dev_agent
+            return dev_agent(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "screen_process":
+            from actions.screen_processor import screen_process
+            result = screen_process(parameters=parameters, player=player, speak=speak)
+            return result if isinstance(result, str) else "Screen captured and analyzed."
+
+        elif tool == "send_message":
+            from actions.send_message import send_message
+            return send_message(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "reminder":
+            from actions.reminder import reminder
+            return reminder(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "youtube_video":
+            from actions.youtube_video import youtube_video
+            return youtube_video(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "weather_report":
+            from actions.weather_report import weather_action
+            return weather_action(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "computer_settings":
+            from actions.computer_settings import computer_settings
+            return computer_settings(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "desktop_control":
+            from actions.desktop import desktop_control
+            return desktop_control(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "computer_control":
+            from actions.computer_control import computer_control
+            return computer_control(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "generated_code":
+            description = parameters.get("description", "")
+            if not description:
+                raise ValueError("generated_code requires a 'description' parameter.")
+            return _run_generated_code(description, speak=speak)
+
+        elif tool == "flight_finder":
+            from actions.flight_finder import flight_finder
+            return flight_finder(parameters=parameters, player=player, speak=speak) or "Done."
+
+        elif tool == "file_processor":
+            from actions.file_processor import file_processor
+            return file_processor(parameters=parameters, player=player, speak=speak) or "Done."
+
+        else:
+            raise ValueError(f"Unknown tool: {tool}")
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +285,19 @@ class AgentExecutor:
         replan_attempts = 0
         completed_steps: list = []
         step_results:    dict = {}
-        plan = create_plan(goal)
+
+        # Consumer-gate: build registry-based planner prompt when flag is ON.
+        # get_flag is imported here (never in planner.py — zero references there).
+        from memory.config_manager import get_flag
+        if get_flag('use_tool_registry'):
+            from core.tool_registry import build_planner_tool_block
+            from agent.planner import build_planner_prompt
+            _planner_system = build_planner_prompt(build_planner_tool_block())
+        else:
+            from agent.planner import PLANNER_PROMPT
+            _planner_system = PLANNER_PROMPT
+
+        plan = create_plan(goal, system=_planner_system)
 
         while True:
             steps = plan.get("steps", [])
@@ -375,7 +405,7 @@ class AgentExecutor:
 
             if speak: speak("Adjusting my approach, sir.")
             replan_attempts += 1
-            plan = replan(goal, completed_steps, failed_step, failed_error)
+            plan = replan(goal, completed_steps, failed_step, failed_error, system=_planner_system)
 
     def _summarize(self, goal: str, completed_steps: list, speak: Callable | None) -> str:
         fallback  = f"All done, sir. Completed {len(completed_steps)} steps for: {goal[:60]}."

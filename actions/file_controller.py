@@ -4,6 +4,8 @@ import platform
 from pathlib import Path
 from datetime import datetime
 
+from core.tool_registry import register_tool
+
 try:
     import send2trash
     _SEND2TRASH = True
@@ -467,6 +469,32 @@ def get_file_info(path: str, name: str = "") -> str:
     except Exception as e:
         return f"Could not get file info: {e}"
 
+@register_tool(
+    name="file_controller",
+    description="Manages files and folders: list, create, delete, move, copy, rename, read, write, find, disk usage.",
+    parameters={
+        "type": "OBJECT",
+        "properties": {
+            "action":      {"type": "STRING", "description": "list | create_file | create_folder | delete | move | copy | rename | read | write | find | largest | disk_usage | organize_desktop | info"},
+            "path":        {"type": "STRING", "description": "File/folder path or shortcut: desktop, downloads, documents, home"},
+            "destination": {"type": "STRING", "description": "Destination path for move/copy"},
+            "new_name":    {"type": "STRING", "description": "New name for rename"},
+            "content":     {"type": "STRING", "description": "Content for create_file/write"},
+            "name":        {"type": "STRING", "description": "File name to search for"},
+            "extension":   {"type": "STRING", "description": "File extension to search"},
+            "count":       {"type": "INTEGER", "description": "Number of results for largest"},
+        },
+        "required": ["action"]
+    },
+    planner_block=(
+        "file_controller\n"
+        '  action: "write" | "create_file" | "read" | "list" | "delete" | "move" | "copy" | "find" | "disk_usage" (required)\n'
+        '  path: string — use "desktop" for Desktop folder\n'
+        "  name: string — filename\n"
+        "  content: string — file content (for write/create_file)"
+    ),
+    is_planner_visible=True,
+)
 def file_controller(
     parameters: dict = None,
     player=None,

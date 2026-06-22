@@ -533,7 +533,13 @@ def _to_ollama_tools(decls: list) -> list:
     return tools
 
 
-OLLAMA_TOOLS = _to_ollama_tools(TOOL_DECLARATIONS)
+from memory.config_manager import get_flag as _get_flag
+if _get_flag('use_tool_registry'):
+    from core.tool_registry import import_all_tools, build_ollama_tools
+    import_all_tools()
+    OLLAMA_TOOLS = build_ollama_tools()
+else:
+    OLLAMA_TOOLS = _to_ollama_tools(TOOL_DECLARATIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -822,58 +828,15 @@ class JarvisLocal:
                 self.ui.set_state("LISTENING")
             return "__SILENT__"
 
+        # get_flag imported at call-time (mirrors agent.executor._call_tool):
+        # the import rebinds the name to memory.config_manager.get_flag on every
+        # call, so monkeypatching that attribute in tests takes effect here.
+        from memory.config_manager import get_flag
+
         result = "Done."
         try:
-            if name == "open_app":
-                r = open_app(parameters=args, player=self.ui, speak=self.speak)
-                result = r or f"Opened {args.get('app_name')}."
-
-            elif name == "weather_report":
-                r = weather_action(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Weather delivered."
-
-            elif name == "browser_control":
-                r = browser_control(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "file_controller":
-                r = file_controller(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "send_message":
-                r = send_message(parameters=args, player=self.ui, speak=self.speak)
-                result = r or f"Message sent to {args.get('receiver')}."
-
-            elif name == "reminder":
-                r = reminder(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Reminder set."
-
-            elif name == "youtube_video":
-                r = youtube_video(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "screen_process":
-                # Synchronous call — returns analysis text which the LLM can speak
-                r = screen_process(parameters=args, player=self.ui, speak=self.speak)
-                result = r if isinstance(r, str) and r else "Screen analyzed."
-
-            elif name == "computer_settings":
-                r = computer_settings(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "desktop_control":
-                r = desktop_control(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "code_helper":
-                r = code_helper(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "dev_agent":
-                r = dev_agent(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "agent_task":
+            # ── Inline arms (flag-independent) — must stay BEFORE the flag gate ──
+            if name == "agent_task":
                 from agent.task_queue import get_queue, TaskPriority
                 priority_map = {
                     "low": TaskPriority.LOW,
@@ -888,28 +851,6 @@ class JarvisLocal:
                 )
                 result = f"Task started (ID: {task_id})."
 
-            elif name == "web_search":
-                r = web_search_action(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "file_processor":
-                if not args.get("file_path") and self.ui.current_file:
-                    args["file_path"] = self.ui.current_file
-                r = file_processor(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "computer_control":
-                r = computer_control(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "game_updater":
-                r = game_updater(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
-            elif name == "flight_finder":
-                r = flight_finder(parameters=args, player=self.ui, speak=self.speak)
-                result = r or "Done."
-
             elif name == "shutdown_jarvis":
                 self.ui.write_log("SYS: Shutdown requested.")
 
@@ -922,8 +863,109 @@ class JarvisLocal:
                 threading.Thread(target=_shutdown, daemon=True).start()
                 return "Shutting down."
 
+            # ── Flag-ON: route generic tools through the central registry ──────
+            elif get_flag('use_tool_registry'):
+                from core.tool_registry import dispatch, _REGISTRY
+                if name == "file_processor" and not args.get("file_path") and self.ui.current_file:
+                    args["file_path"] = self.ui.current_file
+                spec = _REGISTRY.get(name)
+                if spec is None or spec.inline or spec.func is None:
+                    # Unknown/inline/func-None: clean string, byte-identical to the
+                    # flag-OFF baseline else-arm. Pre-check BEFORE dispatch so an
+                    # unknown name never reaches dispatch's raise (which the except
+                    # would otherwise rewrap into "Tool ... failed:").
+                    result = f"Unknown tool: {name}"
+                else:
+                    r = dispatch(name, args, player=self.ui, speak=self.speak)
+                    # Per-tool fallbacks — EXACT strings preserved from the baseline.
+                    if name == "open_app":
+                        result = r or f"Opened {args.get('app_name')}."
+                    elif name == "weather_report":
+                        result = r or "Weather delivered."
+                    elif name == "send_message":
+                        result = r or f"Message sent to {args.get('receiver')}."
+                    elif name == "reminder":
+                        result = r or "Reminder set."
+                    elif name == "screen_process":
+                        result = r if isinstance(r, str) and r else "Screen analyzed."
+                    else:
+                        result = r or "Done."
+
+            # ── Flag-OFF: VERBATIM 17-arm baseline ladder — DO NOT REFACTOR ────
             else:
-                result = f"Unknown tool: {name}"
+                if name == "open_app":
+                    r = open_app(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or f"Opened {args.get('app_name')}."
+
+                elif name == "weather_report":
+                    r = weather_action(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Weather delivered."
+
+                elif name == "browser_control":
+                    r = browser_control(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "file_controller":
+                    r = file_controller(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "send_message":
+                    r = send_message(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or f"Message sent to {args.get('receiver')}."
+
+                elif name == "reminder":
+                    r = reminder(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Reminder set."
+
+                elif name == "youtube_video":
+                    r = youtube_video(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "screen_process":
+                    # Synchronous call — returns analysis text which the LLM can speak
+                    r = screen_process(parameters=args, player=self.ui, speak=self.speak)
+                    result = r if isinstance(r, str) and r else "Screen analyzed."
+
+                elif name == "computer_settings":
+                    r = computer_settings(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "desktop_control":
+                    r = desktop_control(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "code_helper":
+                    r = code_helper(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "dev_agent":
+                    r = dev_agent(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "web_search":
+                    r = web_search_action(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "file_processor":
+                    if not args.get("file_path") and self.ui.current_file:
+                        args["file_path"] = self.ui.current_file
+                    r = file_processor(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "computer_control":
+                    r = computer_control(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "game_updater":
+                    r = game_updater(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                elif name == "flight_finder":
+                    r = flight_finder(parameters=args, player=self.ui, speak=self.speak)
+                    result = r or "Done."
+
+                else:
+                    result = f"Unknown tool: {name}"
 
         except Exception as e:
             result = f"Tool '{name}' failed: {e}"
