@@ -1,14 +1,7 @@
-# Phase 2 Reflection (Analyze / clarify->analyze) — RARV
-- Reading the live dispatchers beat trusting the spec's prose: executor._call_tool has NO player
-  param at all (executor.py:171) — a must-fix the spec only implied; AC2 unmeetable on the executor
-  leg without it. Verifying against code, not the "What", caught it.
-- The dual-path test's patch points are non-uniform (main binds symbols at module top incl. 2 aliases
-  weather_action/web_search_action; executor lazy-imports) — a naive patch("actions.X.X") gives false
-  greens. Surfaced as an explicit per-tool matrix (§4).
-- session_memory IS read at weather_report.py:36-40 but is runtime-dead (no caller passes it) -> frame
-  as PASS-with-note, NOT a deviation. Over-calling "deviation" would have wrongly bounced the gate.
-- A-1: the planner feeds the EXECUTOR (executor.py:15,267), so a planner-emitted agent_task would raise
-  post-B3. Resolved to add only file_processor; defer agent_task to Design. Trace data flow before
-  resolving even a "preference-only" ambiguity.
-- Harness blocks subagent .md writes -> phase leads return durable text; orchestrator persists via Bash
-  heredoc. Downstream phases read by file reference.
+# Phase 2 Reflection (Analyze — Spec Kit `clarify` → `analyze`) — WO-6 — RARV
+
+- **Result:** Analyze BLOCKED. Live-wheel exercise (not just dir() — actual write attempts + `nm` binary-symbol audit) proved `TraceStore`/`TraceCollector`/`TelemetryStore` are READ-ONLY from Python (only count/active_count/clear), and `TelemetrySample` is hardware-energy-only (no model/token/latency). FR-7/8/9, AC5, NFR-6 are not implementable as written → `status: failed` for replan. Scheduler (FR-1/2/3), session (FR-4/5/6), store_executor (FR-10/11), packaging (FR-12..16), flags (FR-17/18) are all confirmed feasible.
+- **Analysis:** The intake/spec "Verified facts: wheel exports ALL needed stores" verified NAME PRESENCE but never exercised a WRITE — the gap hid behind a true-but-incomplete fact. The single most valuable Phase-2 action was constructing each store and trying to write, exactly the "trust the live tree over the prose" Phase-1 lesson. The resolution has direct precedent: WO-3 hand-rolled a pure-Python SQLite chain when the wheel's `AuditLogger` had the same read-only shape.
+- **Reflection:** Two sharp carry-forwards for Design beyond the blocker — (1) FR-18's allowlist is a *substring* scan (`"get_flag" in src`) with an exact-set `==`, so any new file containing the literal text breaks it; WO-3's "pass flag bools into modules, keep callers at 2" is the cheap correct path. (2) WAL ownership is ambiguous because the stores open SQLite inside Rust — Design must say who runs `PRAGMA journal_mode=WAL`.
+- **Verdict:** FAIL → replan. The orchestrator/team-lead must choose the trace/telemetry resolution (rebuild wheel / pure-Python SQLite shim / re-scope trace-write to WO-7) before Design decomposes FR-7/8/9. The other four lanes can be designed in parallel and do not wait on that decision. ADR candidate logged: "How WO-6 writes traces/telemetry given the read-only wheel surface".
+- **Lessons for next phases (Design):** (1) Verify capability by EXERCISING the wheel, never by export-name presence. (2) `TraceCollector(store)` takes a TraceStore instance, not a path (arg-shape bug class WO-4 warned of). (3) `requirements.txt` is currently 0% pinned (FR-15 is real work). (4) The migration source for the SessionStore is undefined — today's JSON is FACT memory, not a message log; confirm the conversation source or make the first migration a no-op. (5) Local V&V is macOS-only — `.as_posix()` all path strings and treat `gh pr checks` as the real cross-OS gate (NFR-7/AC7).

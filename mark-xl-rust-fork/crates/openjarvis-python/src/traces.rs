@@ -28,6 +28,43 @@ impl PyTraceStore {
             .count()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
+
+    fn save(&self, trace_json: &str) -> PyResult<()> {
+        let trace: openjarvis_core::Trace = serde_json::from_str(trace_json)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        self.inner
+            .save(&trace)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    fn get(&self, trace_id: &str) -> PyResult<Option<String>> {
+        let result = self
+            .inner
+            .get(trace_id)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        match result {
+            Some(trace) => Ok(Some(
+                serde_json::to_string(&trace)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?,
+            )),
+            None => Ok(None),
+        }
+    }
+
+    #[pyo3(signature = (limit=100, offset=0))]
+    fn list_traces(&self, limit: usize, offset: usize) -> PyResult<Vec<String>> {
+        let traces = self
+            .inner
+            .list_traces(limit, offset)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        traces
+            .iter()
+            .map(|t| {
+                serde_json::to_string(t)
+                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+            })
+            .collect()
+    }
 }
 
 #[pyclass(name = "TraceCollector")]
@@ -46,6 +83,25 @@ impl PyTraceCollector {
 
     fn active_count(&self) -> usize {
         self.inner.active_count()
+    }
+
+    fn start_trace(&self, trace_id: &str, query: &str, agent: &str, model: &str) {
+        self.inner.start_trace(trace_id, query, agent, model);
+    }
+
+    #[pyo3(signature = (trace_id, step_json))]
+    fn add_step(&self, trace_id: &str, step_json: &str) -> PyResult<()> {
+        let step: openjarvis_core::TraceStep = serde_json::from_str(step_json)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
+        self.inner.add_step(trace_id, step);
+        Ok(())
+    }
+
+    #[pyo3(signature = (trace_id, result, outcome=None))]
+    fn end_trace(&self, trace_id: &str, result: &str, outcome: Option<&str>) -> PyResult<()> {
+        self.inner
+            .end_trace(trace_id, result, outcome)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
     }
 }
 

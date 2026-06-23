@@ -1,34 +1,11 @@
-# Phase 4 Reflection (Development / `tasks`) — RARV
+# Phase 4 Reflection (Development — Spec Kit `tasks`) — WO-6 — RARV
 
-- **The 5-file granularity gate forced the right split, not just a compliance split.** The 17 action
-  files naturally separate into 4 cohesive batches: "no-speak" group (10 files → T02/T03, 5 each)
-  and "with-speak" group (7 files → T04/T05, 4+3). This matches the cognitive grain of the inner
-  loop — each batch is a mechanical, uniform operation with a clear before/after signature contract,
-  no business-logic risk, and a single acceptance criterion. The split was not arbitrary.
+- **Entry gate held cleanly.** `design.md` + all three contracts + `preflight-report.md` were present; `secrets_status = clean` from Phase 3; `state.json` confirmed `current_phase: 4` and `preflight.secrets_status = "clean"`. No gate failures; proceeded to decomposition immediately.
 
-- **Bundling all executor.py changes into T06 is the only safe design.** Adding `player=None` to
-  `_call_tool` and fixing the 2 internal call sites to `speak=speak` (keyword) are inseparable: if
-  the call sites are left positional after the param is inserted, `speak` silently binds to `player`
-  and the dispatcher is broken in a way that may not surface immediately (no TypeError, just wrong
-  player forwarded). Any decomposition that splits "add player param" from "fix call-site keyword" is
-  a latent correctness trap. T06 owns all six sub-changes as one atomic unit.
+- **21 tasks fit within the 18–22 target.** Lane W = 5 tasks (T01–T05: Rust binding edits in file order, maturin rebuild); SHARED = 1 task (T06: store_executor.py); Lane A = 3 tasks (T07 scheduler, T08 session+migration, T09 flag-OFF guard); Lane B = 4 tasks (T10 trace, T11 telemetry, T12 AC2 concurrency, T13 FR-18 guard); Lane C = 8 tasks (T14–T21: flags, packaging, licensing, pinning, VENDORING, CI, final gate). The Phase 3 SPM suggestion of "~18-22, lane-split if >22" was honoured without needing the non-blocking overflow flag.
 
-- **The non-uniform patch matrix (§4 of the contract) is the top correctness trap, not the largest
-  task.** The dual-path test (T10) is only one file and a medium-size test, but it carries the highest
-  failure risk: naively patching `actions.X.X` for the main leg gives FALSE GREENS because main binds
-  functions at module top. Two aliases (`main.weather_action`, `main.web_search_action`) are
-  particularly easy to miss. T10's acceptance criterion explicitly names both aliases and flags the
-  naive-patch trap so the inner loop cannot overlook it.
+- **Three load-bearing design constraints materialised as per-task acceptance items.** (1) The FR-18 `get_flag` substring-scan trap is enforced by two mechanisms: step-level `grep -c "get_flag" <file>` acceptance checks on T06/T07/T08/T10/T11, and a dedicated guard task T13 that runs `pytest tests/test_flags.py` and asserts it exits 0 unchanged. (2) The PF-2 crash-safe `.bak` constraint is an explicit acceptance sub-item on T08 with `shutil.copy2` + two `os.fsync` calls specified. (3) The WO-4 PyO3 arg-order trap is called out by name in T03 with the field-by-field-by-name construction mandate and explicit `..Default::default()` requirement.
 
-- **Decision C (agent_task stays out of PLANNER_PROMPT) must be enforced at the test level.** T15
-  (TAS-5) asserts BOTH that `file_processor` IS in `PLANNER_PROMPT` AND that `agent_task` is NOT.
-  The spec.md TAS-5 parenthetical "(and agent_task)" is superseded by Decision C; baking the
-  negative assertion into T15's acceptance criterion prevents a spec-faithful-but-broken
-  implementation that adds both (which would manufacture the post-B3 raise the fix is meant to
-  prevent).
+- **One [UNVERIFIED] carry-forward from Phase 3 is assigned to a specific task.** The AC5b telemetry read-back path question (`TelemetryAggregator.stats()`+`count()` vs a new field accessor) is assigned to T03, step 3 — the Rust binding author must resolve and document it as a code comment in `telemetry.rs` before T13 can run. This prevents the unverified assumption from drifting into implementation without a decision record.
 
-- **The regression tests are most valuable as reversal tests, not just passing tests.** Each B1–B4
-  regression test (T12–T15) is annotated with its "pre-fix failure note" — the exact condition under
-  which it MUST be red. The inner loop's Red/Green/Refactor cycle requires genuine Red; documenting
-  the revert path in the task body (e.g., "revert T07's flight_finder change -> test red") ensures
-  AC3's "fails pre-fix" claim is verifiable, not assumed.
+- **Lane B depends on Lane W landing first; Lane A is parallel with B and does not.** Scheduler and session store PyO3 methods already exist (confirmed at `analysis.md:25-26`), so T07 and T08 can start as soon as T06 (SHARED) lands, independent of the wheel rebuild. Trace and telemetry wrappers (T10, T11) require the rebuilt wheel (T05) — they cannot be wired without the new `save`/`record` bindings. The inner-loop-controller must honour this: W → SHARED → A‖B → C (where A and B are parallel but B is blocked on W).

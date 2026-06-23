@@ -1,269 +1,169 @@
-# Spec — WO-0 (Foundations)
+# Specification — WO-6 (Maturity: unified stores + packaging)
 
-> Spec Kit `specify` artifact for WO-0 of the Mark-XL fork (`maseko-lucky-9/Mark-XL`,
-> branch `wo-0-foundations` off `origin/main fb46b5e`). This is the **What**, not the **How** —
-> design/implementation choices belong to Phase 3+ (Design) and the per-task development phase.
-> All facts below are corroborated against the live code on `wo-0-foundations` (file:line cited);
-> the digest count of "17 action tools" was re-verified (`ls actions/*.py` → 17 files).
+> **spec_version: 3 (converged c3, 2026-06-23).** c3 RE-OPENS the telemetry-aggregation lane
+> (user-authorized via coordinator): the zero-stub `TelemetryAggregator.stats()` is NOT acceptable
+> for WO-6 — it MUST compute REAL non-zero aggregates from the persisted `TelemetryRecord` rows
+> (see FR-9, AC5b, and the "WO-6 telemetry-aggregation addendum (converge c3)" section). This is
+> the LAST allowed converge cycle (3/3). v2 preserved at `spec.md.c2.bak`, v1 at `spec.md.c1.bak`.
+>
+> **spec_version: 2 (converged c1, 2026-06-23).** Phase-2 Analyze surfaced a feasibility blocker
+> (the prebuilt wheel exposed only READ methods at the Python boundary for trace/telemetry).
+> **Resolution (user-authorized via coordinator): Option 3 — rebuild the Rust wheel, arm64 macOS
+> ONLY, full WO-6 surface retained (no WO-7 deferral).** The root cause is narrower than first
+> reported: the Rust core types and store write methods ALREADY EXIST; only the PyO3 *bindings*
+> fail to expose them. See §"WO-6 wheel-rebuild addendum (converge c1)". v1 preserved at `spec.md.c1.bak`.
 
----
+WO-6 promotes Mark-XL from in-memory/JSON scratch state to durable, restart-surviving persistence by introducing PyO3-bound SQLite stores (scheduler, session, trace, telemetry) behind a single-writer threading layer, and turns the repository into an installable, license-clean Python package. Every change is feature-flagged OFF by default; flag-OFF (or wheel-absent) behavior is byte-identical to today. Scope is one bounded context — persistence + packaging — with the WO-7 skills engine explicitly excluded except for forward-compatibility of the trace schema. **The wheel is rebuilt for arm64 macOS only (no multi-OS wheel matrix); on Linux/Windows the Rust-backed store tests are skipped while AC6 flag-OFF byte-parity still runs green on every lane.**
 
-## 1. User Scenarios
+## User Scenarios
 
-WO-0 has no end-user-facing feature; its "users" are the downstream Work Orders (WO-1..WO-5) and
-the CI gate that must trust the dispatch layer. The scenarios are the verification foundation they
-each depend on.
+1. **Restart survival of scheduled work.** An operator queues a long-running scheduled task, then the application crashes or is intentionally restarted. On the next launch the previously scheduled task is still present and resumes its lifecycle, rather than silently vanishing. (Today, `agent/task_queue.py` holds tasks in an in-memory `list` (task_queue.py:39) and a `dict` (task_queue.py:42) that are lost on exit.)
 
-- **US-1 — Maintainer runs the suite.** As a Mark-XL maintainer, I run `pytest` locally (and CI runs
-  it on every push) and get a deterministic green/red signal for the dispatch layer, so no downstream
-  change is merged on top of a broken foundation.
-- **US-2 — Downstream WO author trusts dispatch.** As the author of WO-1..WO-5, I rely on every action
-  tool being reachable through **both** dispatch paths (`main._execute_tool` and
-  `executor._call_tool`) with `player` and `speak` forwarded, so I can extend behaviour behind a flag
-  without re-auditing the legacy routing.
-- **US-3 — Voice user keeps current behaviour.** As an end user of the assistant, my existing
-  interactions behave exactly as they do today: every WO-0 change is either a bug correction or an
-  inert (default-OFF) flag schema; nothing changes the flag-OFF (baseline) behaviour.
-- **US-4 — Future capability author has a flag rail.** As the author of a future gated capability, I
-  call `get_flag(name)` against a schema that already exists (all defaults OFF), so I can ship behind a
-  flag from WO-1 onward without building the flag system first.
-- **US-5 — Release engineer sees the Rust seam.** As the release engineer, I see a non-blocking Rust
-  wheel-build placeholder and an `import mark_xl_rust` smoke job that skips cleanly when the wheel is
-  absent, so the CI matrix is green today and ready for WO-1 to activate the real build.
+2. **Conversation continuity across restart.** A user holds a multi-turn conversation, closes Mark-XL, reopens it, and the prior conversation history for that session is still available. On first launch after the upgrade, the operator's existing JSON conversation history is migrated into SQLite with a `.bak` backup written first, so nothing is lost and the migration can be reversed. (Today `memory/memory_manager.py` has no conversation/session handling at all.)
 
----
+3. **Telemetry and trace observability.** An operator wants to understand what the agent did and how expensive it was. They can inspect a durable record of tool calls (name, arguments, outcome, latency — captured as ordered `TraceStep`s on a `Trace`) and per-call telemetry records (latency, token counts, model used — `TelemetryRecord`) accumulated across runs, so they can spot slow tools, failing tools, and costly model calls without re-running the agent.
 
-## 2. Functional Requirements (FR)
+4. **Install and run as a package.** A new operator clones the repo and runs `python -m mark_xl` (or the `mark-xl` console entry point) to launch the application, without hand-assembling a launch command, because the project now ships a `pyproject.toml` with a declared entry point and pinned dependencies.
 
-### FR-1 — Fix the 4 live dispatch bugs (unconditional corrections; NOT flagged)
+5. **License-clean distribution.** A downstream consumer needs to confirm the project's license and the attribution obligations for the vendored Rust crates before redistributing. They find a `LICENSE` (MIT) and a `NOTICE` (Apache-2.0 attribution for the vendored OJ crates) in the repo root, and a documented quarterly vendoring sync procedure.
 
-- **FR-1.1 (B1) — `main.py:896` `flight_finder` drops `speak`.** Live: `flight_finder(parameters=args,
-  player=self.ui)` (main.py:896); `actions/flight_finder.py:284` accepts `speak=None`. Required outcome:
-  the `main`-path dispatch of `flight_finder` forwards the active `speak` callable, so `flight_finder`
-  receives `speak` from both dispatch paths. (`executor._call_tool` already forwards `speak` at
-  executor.py:241 — corroborated.)
-- **FR-1.2 (B2) — `executor._call_tool` is missing `file_processor`.** Required outcome: `file_processor`
-  is dispatchable through `executor._call_tool`, and the executor tool set is reconciled to the full
-  17-tool action set (the canonical enumeration in §6), each call forwarding `player` and `speak`.
-- **FR-1.3 (B3) — `executor.py:243-245` silent generated-code fallback for unknown tools.** Live: the
-  `else` branch prints a warning and calls `_run_generated_code(...)` for any unknown tool. Required
-  outcome: an unknown tool **raises** (e.g. `ValueError`/`KeyError`) instead of silently falling back to
-  generated code; the silent fallback is removed.
-- **FR-1.4 (B4) — `planner.py` `PLANNER_PROMPT` lists 16 tools, missing `file_processor` (and
-  `agent_task`).** Live: a `grep` for `file_processor`/`agent_task` in `planner.py` returns no match.
-  Required outcome: the planner-visible tool list includes the missing tools so the planner can emit
-  steps for them. (WO-2 will auto-generate this list; WO-0 only corrects it by hand.)
+6. **Graceful degradation when the wheel is absent.** An operator on a platform with no built `mark_xl_rust` wheel (e.g. Linux/Windows — the wheel is arm64-macOS-only), or who leaves the WO-6 flags OFF, runs the application and it behaves exactly as it does today — legacy in-memory scheduler and JSON conversation history — with no crash and no error raised merely because the wheel or the durable store is unavailable.
 
-### FR-2 — Normalize the 17 action tool signatures
+## Functional Requirements
 
-- **FR-2.1.** All 17 functions in `actions/*.py` (the canonical set in §6) expose the uniform signature
-  `(parameters, player=None, speak=None, **kwargs) -> str`. 10 currently lack `speak`; 7 already have it
-  (code_helper, dev_agent, screen_process[screen_processor], youtube_video, file_processor,
-  flight_finder, game_updater).
-- **FR-2.2.** The dead `session_memory` and dead `response` parameters are dropped from the signatures;
-  `**kwargs` absorbs them from any un-updated caller (so no caller breaks during the transition).
-- **FR-2.3.** All callers in `main.py` (`_execute_tool`) and `agent/executor.py` (`_call_tool`) are
-  updated in the same pass to forward `player` and `speak` and to match the normalized signatures.
+### Scheduler store
+- **FR-1** — `agent/task_queue.py` MUST gain a durable backing store, `SchedulerStore` (PyO3-bound wheel class, constructed hermetically with a single `path` argument), exposing `create_task`, `get_task`, `list_tasks`, `update_status`, `delete_task`, and `record_run`. When `use_scheduler_store` is ON and the wheel is available, `TaskQueue` MUST persist scheduled tasks through `SchedulerStore` and reload them on startup.
+- **FR-2** — The store integration MUST preserve the existing `TaskStatus` enum (task_queue.py:9-14) and `TaskPriority` enum (task_queue.py:17-20) value semantics, and the priority-ordered `Task` dataclass field order and `compare` flags (task_queue.py:23-34). No status string or priority integer may change.
+- **FR-3** — When `use_scheduler_store` is OFF, or the wheel is absent, `agent/task_queue.py` MUST retain its current in-memory `list` + `threading.Lock` + `threading.Condition` + `dict` behavior (task_queue.py:39-42) unchanged.
 
-### FR-3 — Feature-flag system (builds the rail; gates nothing in WO-0)
+### Session store + migration
+- **FR-4** — `memory/memory_manager.py` MUST gain a `SessionStore` (PyO3-bound wheel class, single `path` arg) exposing `get_or_create`, `save_message`, `list_sessions`, `link_channel`, `consolidate`, and `decay`, used when `use_session_store` is ON and the wheel is available. This conversation/session memory is DISTINCT from WO-4's `core/memory_v2.py` semantic FACT memory; the two MUST NOT share storage or overlap in responsibility.
+- **FR-5** — On first launch with `use_session_store` ON, `memory/memory_manager.py` MUST auto-migrate the existing JSON conversation history into the `SessionStore` SQLite database, writing a `.bak` copy of the source JSON before any write. The migration MUST be loss-free and round-trippable (every message readable back identically). If no conversation-history source exists (today's `long_term.json` is FACT memory, not a message log), the first migration is a documented no-op that still satisfies `.bak`/round-trip semantics on an empty/created source.
+- **FR-6** — When `use_session_store` is OFF, or the wheel is absent, `memory/memory_manager.py` MUST behave exactly as today (no session handling, JSON history untouched, no migration triggered).
 
-- **FR-3.1.** `memory/config_manager.py` is extended with a flag **schema** and a `get_flag(name)`
-  accessor.
-- **FR-3.2.** Every flag defaults **OFF**. WO-0 wraps **no** behaviour in a flag — the bug fixes and
-  signature normalization are unconditional corrections, not gated changes.
+### Trace store
+- **FR-7** — The NEW module `core/trace_collector.py` MUST provide `TraceStore` (PyO3-bound, single `path` arg) and `TraceCollector`, capturing each tool call's name, arguments, outcome, and latency, gated behind `enable_trace_store`. Capture writes a `Trace` (with ordered `TraceStep`s) through the wheel's `TraceStore.save`. The store MUST hold at least 1000 traces. **[converge c1]** This requires exposing the already-existing Rust `TraceStore::save`/`get`/`list_traces` and the `TraceCollector` record path through PyO3 (today only `count`/`active_count` are bound) and rebuilding the wheel.
+- **FR-8** — The `core/trace_collector.py` trace schema MUST be WO-7-discovery-ready: it MUST record enough structure (ordered tool-call sequences with timestamps and outcomes) for a future skill-discovery pass to read recurring tool sequences. **[converge c1]** The existing Rust `Trace`/`TraceStep` core types (types.rs:379 / types.rs:364) already provide `steps` (ordered), `started_at`/`ended_at`, `outcome`, `model`, `engine`, `total_tokens`, `total_latency_seconds` — WO-6 exposes and round-trip-tests this schema; no discovery logic is implemented in WO-6.
 
-### FR-4 — pytest harness from zero
+### Telemetry store
+- **FR-9** — The NEW module `core/telemetry.py` MUST provide `TelemetryStore` (PyO3-bound, single `path` arg), a per-call telemetry RECORD type carrying model identity, token counts (prompt/completion/total) and latency, and `TelemetryAggregator`, gated behind `enable_telemetry`. **[converge c1]** The persistence row is the existing Rust `TelemetryRecord` (types.rs:276) which ALREADY carries `model_id`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_seconds`, `ttft`, `cost_usd` — and `TelemetryStore::record` already writes it. WO-6 exposes a `record(...)`/record-type binding through PyO3 (today only `count`/`clear` are bound; `TelemetrySample` is a SEPARATE hardware-energy ring-buffer type and is NOT the persistence row) and rebuilds the wheel. No Rust schema change is needed. **[converge c3]** `TelemetryAggregator.stats()` MUST return REAL non-zero aggregates computed from the persisted rows (not the zero-stub `AggregateStats::default()`): `total_requests` (COUNT), `total_tokens` (SUM), `avg_latency` (AVG latency_seconds), `avg_throughput` (AVG throughput_tok_per_sec), `total_cost` (SUM cost_usd), `total_energy` (SUM energy_joules) over the `telemetry` table that `record()` populates. Implement the SQL aggregation in the Rust telemetry crate's `aggregator.rs`, refresh the PyO3 stats() surface (the `AggregateStats` JSON shape is unchanged), and rebuild the arm64 wheel. No telemetry-row SCHEMA change.
 
-- **FR-4.1.** A `conftest.py` plus fixtures provide a **real** `QApplication`/`QTest` (UI-thread tests
-  need it, not mocks), an Ollama mock, and thread fixtures.
-- **FR-4.2.** A parametrized test dispatches **every** one of the 17 action tools (§6) through **both**
-  `main._execute_tool` and `executor._call_tool`, with mock `player` and `speak`. The assertion is a
-  **routing/wiring assertion** — patch each `actions.X` entry point with a mock and assert the dispatcher
-  forwards `player` and `speak` — **not** live side-effect execution.
-- **FR-4.3.** The 3 inline (main-only) tools — `save_memory`, `agent_task`, `shutdown_jarvis` — get
-  individual main-only tests. `shutdown_jarvis` (spawns a daemon thread → `os._exit(0)`) **must be
-  mocked** so the test process is not killed.
-- **FR-4.4.** Each of the 4 bug fixes (FR-1.1..FR-1.4) has a dedicated regression test that fails on the
-  pre-fix code and passes on the fixed code.
+### Store executor threading layer
+- **FR-10** — A NEW module `core/store_executor.py` MUST route all store calls through a `ThreadPoolExecutor(max_workers=1)` (single writer), marshalling results back to the Qt main thread via Qt signals, and MUST enable the WAL pragma on every SQLite database it opens. No store call may run synchronously on the Qt main thread.
+- **FR-11** — `core/store_executor.py` MUST mirror the proven WO-1 adapter pattern in `core/mark_xl_rust_adapter.py`: optional-import guard that sets a `WHEEL_AVAILABLE`-style boolean and never raises on missing wheel (mark_xl_rust_adapter.py:56-62); a lazily-created daemon-safe pool with `atexit` shutdown (`wait=False`); and a Qt-signal result bridge where results never touch Qt objects from a worker thread (mark_xl_rust_adapter.py:17-25 docstring contract). It MUST NOT introduce a second, independent threading mechanism.
 
-### FR-5 — CI (GitHub Actions)
+### Packaging
+- **FR-12** — A `pyproject.toml` MUST be created at the repo root declaring a `mark-xl` console entry point and enabling `python -m mark_xl` via a `mark_xl/__main__.py` (or equivalent package `__main__`).
+- **FR-13** — A `LICENSE` file (MIT) MUST be created at the repo root.
+- **FR-14** — A `NOTICE` file (Apache-2.0 attribution for the vendored OJ crates) MUST be created at the repo root.
+- **FR-15** — The existing `requirements.txt` (54 lines, present, currently 0% pinned) MUST have every dependency pinned to an exact version.
+- **FR-16** — The existing `docs/VENDORING.md` (84 lines, present) MUST be extended with a note describing the quarterly rsync sync procedure for the vendored crates (the file already documents rsync, not git-subtree — align the wording), **and MUST document the arm64-macOS-only wheel-build/re-vendor procedure (converge c1).**
 
-- **FR-5.1.** A test matrix runs on macOS `macos-14` (arm64) + `macos-13` (x86), Windows, and Linux ×
-  Python 3.11 / 3.12 / 3.13, and must be green on every leg.
-- **FR-5.2.** A Rust wheel-build job is present as a **non-blocking placeholder stub** (WO-1 produces
-  `mark_xl_rust`); it does not block WO-0. Rust toolchain is pinned for the placeholder
-  (`dtolnay/rust-toolchain@1.88`, maturin, sccache) for WO-1 to activate.
-- **FR-5.3.** An `import mark_xl_rust` smoke job is present and **skips cleanly** when the wheel is
-  absent.
+### WO-6 flag set
+- **FR-17** — `config/flags.json` MUST gain four NEW boolean flags, all default `false`, following the existing `use_*`/`enable_*` convention alongside the current keys (flags.json:2-6): `use_scheduler_store` (FR-1), `use_session_store` (FR-4), `enable_trace_store` (FR-7), and `enable_telemetry` (FR-9). One boolean flag governs each store area. **[converge c1: all four RETAINED — `enable_telemetry` is NOT dropped.]**
+- **FR-18** — The WO-0 exact-set get_flag allowlist MUST be extended. The test `tests/test_flags.py::test_only_sanctioned_production_code_calls_get_flag` asserts `set(callers) == {"main.py", "agent/executor.py"}` (test_flags.py:139) via a SUBSTRING scan (`"get_flag" in src`, test_flags.py:131) over every production `.py`. Every WO-6 production file that gates on a WO-6 flag MUST be added to that exact set, and only those files; the assertion AND its failure message MUST be updated in lockstep, and no new file may contain a stray `get_flag` substring outside a sanctioned caller. PREFERRED approach (WO-3 precedent): pass resolved flag booleans INTO the store modules from `main.py`/`agent/executor.py` to keep the caller set minimal; extend the exact set only for genuinely-new sanctioned gating sites.
 
----
+## Non-Functional Requirements
 
-## 3. Non-Functional Requirements (NFR)
+- **NFR-1 (Threading contract)** — No store read or write may execute synchronously or via `block_on` on the Qt main thread. All store access routes through `core/store_executor.py`'s single-worker pool with Qt-signal result marshalling.
+- **NFR-2 (WAL + single writer)** — Every SQLite database opened by any WO-6 store MUST have the WAL journal pragma enabled, and all writes MUST funnel through exactly one writer thread (`max_workers=1`). The Python store-owner runs `PRAGMA journal_mode=WAL` on the path it owns (the Rust stores open the connection but do not set WAL).
+- **NFR-3 (Flag-OFF == baseline)** — With all four WO-6 flags OFF, the application's observable behavior MUST be byte-identical to the pre-WO-6 baseline (cfcd5db): legacy in-memory scheduler, JSON conversation history, no trace/telemetry capture. No module-level store construction at import time.
+- **NFR-4 (Wheel-optional graceful degrade)** — Every store path MUST degrade gracefully to its legacy in-memory/JSON behavior when `WHEEL_AVAILABLE` is False OR the governing WO-6 flag is OFF. No store path may raise solely because the wheel is absent. **(Material on Linux/Windows, where the arm64-macOS-only wheel is absent by design.)**
+- **NFR-5 (Migration loss-free + reversible)** — Any JSON→SQLite migration MUST write a `.bak` of the source before any write and MUST be round-trippable: every migrated record reads back identically to its source.
+- **NFR-6 (Trace capacity)** — `core/trace_collector.py`'s `TraceStore` MUST sustain at least 1000 stored traces without loss or error.
+- **NFR-7 (CI matrix)** — CI MUST be green on the required matrix. **[converge c1]** The Rust-backed wheel + its store tests build/run on an **arm64 macOS runner only (`macos-14`/`macos-latest` — NOT `macos-13`, which is x86 and will not allocate per `markxl-wo0-ci-env-gaps`)**. The existing Linux + Windows lanes (× Python 3.11–3.13) MUST stay green: the arm64-only Rust-backed store tests are SKIPPED there (the wheel does not import), but AC6 flag-OFF byte-parity MUST pass on every lane. No new platform lanes are added; no multi-OS wheel matrix.
 
-- **NFR-1 — Pure-Python only.** No Rust runtime dependency in WO-0; the wheel is a CI placeholder.
-- **NFR-2 — No OpenJarvis imports.** Do NOT adopt OJ `ToolExecutor`/`EventBus`; **no OJ imports** in any
-  WO-0 file (constitution §1).
-- **NFR-3 — flag-OFF == baseline, byte-for-byte semantics.** With all flags OFF (the WO-0 default state),
-  observable behaviour equals today's behaviour. This is trivially met because WO-0 gates nothing; the
-  requirement still binds any code added.
-- **NFR-4 — Unix-only `rlimit` gated.** Any use of `rlimit` is Unix-only and must be gated so Windows
-  matrix legs do not fail on its absence (recorded for WO-1; WO-0 introduces no ungated `rlimit` use).
-- **NFR-5 — abi3 decision recorded.** WO-1 builds the wheel with `abi3=true`, one wheel/platform, Py3.11+
-  (recorded here for the Rust placeholder; not built in WO-0).
-- **NFR-6 — Python 3.11–3.13 compatibility.** All WO-0 Python runs on the full 3.11/3.12/3.13 range.
-- **NFR-7 — Fork-only git discipline.** Work only in the fork `~/Repo/agents/mark-xl`; branch
-  `wo-0-foundations` off `origin/main`; commit/push to `origin` only; PRs target the fork's own `main`,
-  **never** `upstream`; Co-Authored-By trailer on commits.
-- **NFR-8 — Deterministic, isolated tests.** Tests must not kill the runner (`shutdown_jarvis` mocked),
-  must not perform live side effects in the dual-path routing assertion, and must be deterministic across
-  matrix legs.
+## Edge Cases
 
----
+- **Wheel absent** — Importing any WO-6 store module MUST succeed with the `WHEEL_AVAILABLE`-style boolean set False; the governing code paths fall back to legacy in-memory/JSON behavior without raising. (This is the normal state on Linux/Windows.)
+- **Flag OFF mid-store-area** — With a given WO-6 flag OFF but the wheel present, that store area MUST stay on legacy behavior; the present wheel MUST NOT be used opportunistically.
+- **Corrupt / partial JSON during migration** — If the source JSON conversation history is corrupt or truncated, the migration MUST NOT destroy the source (the `.bak` is written first) and MUST fail safe (legacy JSON path retained) rather than half-writing the SQLite store.
+- **Concurrent writers contending the single writer** — Multiple callers issuing store writes concurrently MUST be serialized through the single writer thread without data loss, deadlock, or Qt main-thread stalls.
+- **Restart mid-task** — A task interrupted mid-run by a restart MUST be reloadable from `SchedulerStore` in a coherent state on next launch (its persisted status reflects the last recorded transition).
+- **Trace store at / over capacity** — At and beyond 1000 traces the `TraceStore` MUST continue to function (per its defined retention behavior) without raising or corrupting earlier traces.
+- **DB locked** — A transient SQLite "database is locked" condition MUST be handled by the single-writer/WAL design rather than surfacing as an unhandled error to the Qt main thread.
+- **Qt thread-affinity violations** — Results from worker-thread store calls MUST reach the Qt main thread only via signal marshalling; no Qt object may be touched from the worker thread.
 
-## 4. Edge Cases
+## Testing Acceptance Scenarios
 
-- **EC-1 — `rlimit` absent on Windows.** Windows matrix legs lack `resource.setrlimit`; any rlimit-gated
-  path must be skipped/guarded so those legs stay green.
-- **EC-2 — Rust wheel absent.** The `import mark_xl_rust` smoke job runs with no wheel present and must
-  **skip** (not fail). The wheel-build placeholder must not block the matrix.
-- **EC-3 — `shutdown_jarvis` self-termination.** `shutdown_jarvis` spawns a daemon thread that calls
-  `os._exit(0)`; its test must mock the exit so the pytest process survives.
-- **EC-4 — Dead params on un-updated callers.** After signatures drop `session_memory`/`response`, any
-  caller still passing them must not break — `**kwargs` absorbs the extras.
-- **EC-5 — Unknown tool now raises (behaviour change is intentional, not a regression).** Post-FR-1.3,
-  `executor._call_tool` with an unrecognized tool raises rather than silently generating code. The
-  regression test for B3 asserts the raise. (This is the single intended behavioural change vs. baseline;
-  it is a bug *correction*, not a flagged feature.)
-- **EC-6 — `screen_process` vs `screen_processor` naming.** The action file is `screen_processor.py`; the
-  tool name dispatched is `screen_process`. The enumeration in §6 is the authoritative tool-name list.
-- **EC-7 — Inline tools cannot dispatch through both paths.** `save_memory`, `agent_task`,
-  `shutdown_jarvis` are main-only (absent from `executor._call_tool`); they are excluded from the
-  dual-path parametrization and tested individually (FR-4.3). Asserting them through both paths would be
-  a false requirement.
+- **AC1 (scheduler restart survival)** — Create and persist a scheduled task via `SchedulerStore` with `use_scheduler_store` ON; simulate process restart (re-instantiate `TaskQueue`); assert the task is reloaded with its `TaskStatus`/`TaskPriority` intact.
+- **AC2 (concurrency / FPS)** — Drive a QTimer alongside 100 store writes through `core/store_executor.py`; probe the frame rate and assert ≥30 FPS (no Qt main-thread stall); assert the WAL pragma is enabled on every opened DB.
+- **AC3 (entry point)** — Invoke `python -m mark_xl` (and the `mark-xl` console script) and assert the application entry point launches without error, confirming `pyproject.toml` + `mark_xl/__main__.py`.
+- **AC4 (session migration loss-free)** — With `use_session_store` ON, run the JSON→SQLite session migration on a fixture JSON history; assert a `.bak` of the source was written and that every migrated message round-trips back identically.
+- **AC5 (trace capacity + schema)** — Write 1000+ traces to the (rebuilt) `TraceStore` via the exposed `save`/record path; assert all are retrievable (`count`/`list_traces`/`get`) and that the recorded schema exposes ordered tool-call sequences (`TraceStep`s) with outcomes/timestamps sufficient for WO-7 discovery. **[converge c1: now satisfiable — the rebuilt wheel exposes the write path.]**
+- **AC5b (telemetry round-trip + REAL aggregation) [converge c3 — STRENGTHENED]** — With `enable_telemetry` ON, write N telemetry records with KNOWN inputs (model_id + prompt/completion/total tokens + latency + cost) via the exposed `TelemetryStore.record` path; assert `count()` == N AND assert `TelemetryAggregator.stats()` returns the CORRECT computed aggregates: `total_requests` == N, `total_tokens` == sum of inputs, `avg_latency` == mean of inputs, `total_cost` == sum of inputs (all NON-ZERO and numerically correct, not just structurally present). The prior c1 'accept zero-stub / defer rollup to WO-7' disposition is SUPERSEDED.
+- **AC6 (flag-OFF baseline)** — With all four WO-6 flags OFF (and separately with the wheel absent — the normal Linux/Windows state), assert observable behavior equals the pre-WO-6 baseline (cfcd5db: legacy in-memory scheduler + JSON history, no trace/telemetry capture). This AC MUST pass on every CI lane.
+- **AC7 (CI matrix green)** — Run the suite on the required matrix; assert all required lanes are green: **arm64 macOS (`macos-latest`) runs the Rust-backed wheel + store tests; Linux + Windows × Python 3.11–3.13 run with the arm64-only store tests SKIPPED but AC6 parity green. `macos-13` (x86) is informational only and not required.**
+- **AC8 (packaging + licensing)** — Assert `LICENSE` (MIT) and `NOTICE` (Apache-2.0 attribution) exist at the repo root, that `requirements.txt` dependencies are all exact-pinned, and that `docs/VENDORING.md` contains the quarterly sync note + the arm64-macOS-only wheel-build procedure.
 
----
+## Acceptance Checklist
 
-## 5. Testing Acceptance Scenarios (Given / When / Then)
+- [ ] **AC1** — Scheduled task survives restart (persist to `SchedulerStore`, reload on start).
+- [ ] **AC2** — Concurrency test — QTimer + 100 writes holds ≥30 FPS (no Qt main-thread stalls); WAL enabled on all DBs.
+- [ ] **AC3** — `python -m mark_xl` entry point works (`pyproject.toml` + `__main__`).
+- [ ] **AC4** — JSON→SQLite session migration loss-free (`.bak` written + round-trip test).
+- [ ] **AC5** — Trace store holds 1000+ traces; schema (ordered `TraceStep`s) is WO-7-discovery-ready; write path exposed via rebuilt wheel.
+- [ ] **AC5b** — Telemetry record round-trips via `TelemetryStore.record`; `TelemetryAggregator.stats()` returns CORRECT non-zero aggregates (count/sum/avg) on a known-input round-trip [converge c3].
+- [ ] **AC6** — flag-OFF == baseline (legacy in-memory/JSON behavior unchanged when WO-6 flags OFF / wheel absent); green on every lane.
+- [ ] **AC7** — CI green: arm64-macOS runs Rust-backed wheel+tests; Linux/Win × Py3.11–3.13 green with arm64-only tests skipped; macOS-13 informational.
+- [ ] **AC8** — `LICENSE` (MIT) + `NOTICE` (Apache-2.0) present; requirements pinned; `VENDORING.md` quarterly + arm64-build note added.
 
-- **TAS-1 — Dual-path routing for all 17 action tools.**
-  *Given* each tool `X` in the §6 dual-path set with its `actions.X` entry point patched by a mock,
-  *when* the tool is dispatched through `main._execute_tool` **and** through `executor._call_tool` with a
-  mock `player` and a mock `speak`, *then* the patched entry point is invoked on **both** paths with
-  `player` and `speak` forwarded. (Routing/wiring assertion — no live side effects.)
-- **TAS-2 — B1 regression (flight_finder speak).** *Given* the `main`-path dispatch of `flight_finder`,
-  *when* a tracked `speak` is supplied, *then* `flight_finder` receives that `speak` (fails on pre-fix
-  code where `speak` is dropped at main.py:896).
-- **TAS-3 — B2 regression (executor file_processor).** *Given* `executor._call_tool`, *when* called with
-  `file_processor`, *then* it dispatches to `actions.file_processor` (fails on pre-fix code where the
-  branch is missing).
-- **TAS-4 — B3 regression (unknown tool raises).** *Given* `executor._call_tool`, *when* called with an
-  unknown tool name, *then* it raises (fails on pre-fix code that silently calls `_run_generated_code`).
-- **TAS-5 — B4 regression (planner lists missing tools).** *Given* `PLANNER_PROMPT`, *when* inspected,
-  *then* it includes `file_processor` (and `agent_task`) (fails on pre-fix code that omits them).
-- **TAS-6 — Inline tools (main-only).** *Given* each of `save_memory`, `agent_task`, `shutdown_jarvis`,
-  *when* dispatched through `main._execute_tool` (with `shutdown_jarvis`'s `os._exit` mocked), *then* the
-  expected inline handler runs without killing the test process.
-- **TAS-7 — Flag system default-OFF.** *Given* the flag schema, *when* `get_flag(name)` is read with no
-  override, *then* every flag returns OFF, and no WO-0 fix/normalization is wrapped in a flag.
-- **TAS-8 — CI matrix + Rust placeholder.** *Given* the GitHub Actions workflow, *when* CI runs, *then*
-  every matrix leg (macos-14, macos-13, Windows, Linux × Py3.11/3.12/3.13) is green, the Rust wheel job is
-  present and non-blocking, and the `import mark_xl_rust` smoke job skips cleanly when the wheel is absent.
+## WO-6 wheel-rebuild addendum (converge c1)
 
----
+**Decision:** Option 3 — rebuild the Rust wheel (arm64 macOS only); full WO-6 surface retained.
+**Root cause (refined from Phase-2):** the Phase-2 finding "no Python write path / TelemetrySample is hardware-only" was correct AT THE PYTHON BOUNDARY but the cause is binding-only. Verified in the Rust source:
+- `openjarvis-traces/src/store.rs:57` `TraceStore::save(&Trace)` + `:92 get` + `:139 list_traces` + `:196 count` ALL exist; schema (store.rs:26-41) includes `steps_json` (ordered), `outcome`, `model`, `engine`, `started_at`/`ended_at`, `total_tokens`, `total_latency_seconds` — WO-7-ready.
+- `openjarvis-telemetry/src/store.rs:68` `TelemetryStore::record(&TelemetryRecord)` exists; `TelemetryRecord` (core/types.rs:276) carries `model_id`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `latency_seconds`, `ttft`, `cost_usd` — exactly FR-9.
+- The gap is in `crates/openjarvis-python/src/traces.rs` (PyTraceStore exposes only `count`; PyTraceCollector only `active_count`) and `.../telemetry.rs` (PyTelemetryStore only `count`/`clear`; `PyTelemetrySample` is a SEPARATE hardware ring-buffer type, NOT the persistence row).
 
-## 6. Canonical Tool Enumeration (source of truth for the parametrized test)
+**Wheel-rebuild work (bounded; WO-4 precedent):**
+1. PyO3 bindings: add `save`/`get`/`list_traces` (and a `Trace`/`TraceStep` py-type or dict round-trip) to `PyTraceStore`; add a record path to `PyTraceCollector`; add `record(...)` + a `PyTelemetryRecord` py-type (model/token/latency) to `PyTelemetryStore`. NO new Rust storage logic, NO telemetry schema change.
+2. Rebuild for arm64 macOS only: `source $HOME/.cargo/env` before `maturin` (cargo off PATH — WO-4 lesson); watch the PyO3 arg-order trap (Python kw order vs Rust positional — WO-4 lesson); vectors f64 (n/a here, no embeddings).
+3. Re-vendor the built wheel as in WO-4; update `docs/VENDORING.md` with the arm64-only build/re-vendor steps (FR-16).
 
-> Copied **verbatim** from `pipeline/intake.md:40-44`. This is the test's source of truth; do not
-> paraphrase or re-derive (the "18 tools" figure is a confirmed miscount — see Lessons Applied).
+**CI reconciliation (no new platforms):** arm64-mac runner (`macos-latest`) builds+tests the wheel and Rust-backed stores; Linux/Windows lanes skip the arm64-only store tests via a `WHEEL_AVAILABLE`/platform guard while AC6 flag-OFF parity runs green everywhere (NFR-7/AC7).
 
-**17 dual-path action tools:** open_app, web_search, weather_report, send_message, reminder, youtube_video,
-screen_process, computer_settings, browser_control, file_controller, desktop_control, code_helper, dev_agent,
-computer_control, game_updater, flight_finder, file_processor.
+## WO-6 telemetry-aggregation addendum (converge c3)
 
-**3 special inline tools (main-only, individual tests):** save_memory (`__SILENT__`), agent_task (task queue),
-shutdown_jarvis (spawns daemon thread → `os._exit(0)`; MUST be mocked in tests).
+**Decision (user-authorized via coordinator, converge cycle c3 = 3/3, LAST allowed):** the c1 disposition that accepted the zero-stub `TelemetryAggregator.stats()` (deferring the rollup to WO-7) is SUPERSEDED. WO-6 MUST ship REAL telemetry aggregation.
 
----
+**Root cause (verified):** `mark-xl-rust-fork/crates/openjarvis-telemetry/src/aggregator.rs` defines a complete `AggregateStats` struct (`total_requests, total_tokens, avg_latency, avg_throughput, total_cost, total_energy`) and the PyO3 binding already serializes it to JSON — but `TelemetryAggregator::stats(_store)` IGNORES the store and returns `AggregateStats::default()` (all zeros). The `telemetry` SQLite table (store.rs:28-50) already has every needed column and is populated by `record()`. The gap is purely the missing SQL aggregation in the `stats()` body.
 
-## 7. Out of Scope (explicit)
+**c3 work (bounded; no schema/struct/binding-shape change):**
+1. Rust: implement `TelemetryAggregator::stats(store)` to run a single `SELECT COUNT(*), SUM(total_tokens), AVG(latency_seconds), AVG(throughput_tok_per_sec), SUM(cost_usd), SUM(energy_joules) FROM telemetry` and map the row into `AggregateStats`. Add a `pub(crate)` connection/query accessor on `TelemetryStore` if the aggregator cannot reach `conn` directly. Handle the empty-table case (0 rows → zeros, no error).
+2. PyO3: no signature change — `PyTelemetryAggregator.stats()` already returns the JSON; just rebuild so the real computation is compiled in.
+3. Rebuild the arm64 wheel + re-vendor (WO-4 precedent: `source $HOME/.cargo/env` before maturin; field-by-field struct construction with `..Default::default()`). arm64-macOS ONLY.
+4. Tests: `tests/test_wo6_stores.py` AC5b asserts REAL numbers on a known-input round-trip (write N records → stats() == expected count/sum/avg), not just `count()`.
 
-WO-0 is **only** the verification foundation + the 4 bug fixes + signature normalization. Explicitly
-excluded:
+**Standing constraints preserved:** AC6 flag-OFF==byte-baseline on every lane; `tests/test_flags.py:139` callers stay at 2 (no new `get_flag` substring); arm64-only CI skip pattern intact; no second threading mechanism.
 
-- **The real Rust wheel build** (WO-1) — WO-0 ships only a non-blocking CI placeholder + the abi3
-  decision record.
-- **Registry refactor** (WO-2) — WO-0 corrects the planner tool list by hand; it does not auto-generate
-  it.
-- **Security gates** (WO-3).
-- **Memory work** (WO-4).
-- **Loopguard** (WO-5).
-- **OpenJarvis paradigm agents, `ToolExecutor`/`EventBus`, DSPy/GEPA/RL** — banned globally
-  (constitution §"Banned").
-- **Gating WO-0 changes behind flags** — the flag system is built but gates nothing.
+## SPM
 
----
+- **Scope** — One bounded context: persistence + packaging. Four PyO3 SQLite stores (`SchedulerStore`, `SessionStore`, `TraceStore`, `TelemetryStore`) plus the `core/store_executor.py` threading layer, one JSON→SQLite migration, four new feature flags, an **arm64-macOS-only PyO3-binding-exposure + wheel rebuild + re-vendor**, and the packaging artifacts (`pyproject.toml`, `LICENSE`, `NOTICE`, pinned `requirements.txt`, `VENDORING.md` extension). No new dispatch path; reuse the WO-2 registry.
+- **Effort / schedule** — Tier B, ~2–3 weeks, medium risk. The wheel rebuild is bounded (binding exposure only; no new Rust logic) — risk lower than the Phase-2 worst case.
+- **Key risks** — (1) Qt thread-affinity violation; (2) migration data loss (mitigated by `.bak` + round-trip); (3) PyO3 arg-order trap on the new bindings (WO-4 lesson); (4) allowlist drift (exact-set get_flag test); (5) single-writer contention; (6) arm64-only CI gating must not break existing Linux/Windows lanes (AC6 must stay green while store tests are skipped).
+- **Requirement notes** — Estimated ~18–22 atomic tasks (the wheel-rebuild + binding lane adds ~3–4 over the original ~15–20). If decomposition exceeds 22 tasks, a non-blocking lane-split is suggested: Lane W = PyO3 bindings + wheel rebuild + re-vendor (lands FIRST — scheduler/session can use the existing methods, but trace/telemetry depend on it), Lane A = scheduler + session stores (incl. migration), Lane B = trace + telemetry stores (depends on Lane W), Lane C = packaging + licensing. `core/store_executor.py` is the shared threading dependency and lands before A/B.
 
-## 8. SPM — Software Project Management
+## Out of Scope
 
-- **Scope.** Single bounded context: the dispatch + foundations layer. 4 bug fixes, 17-signature
-  normalization + caller updates, a default-OFF feature-flag schema, a from-zero pytest harness, and a
-  GitHub Actions CI matrix with a non-blocking Rust placeholder. No scope decomposition warning; not
-  dual-client (`intake.dual_client = false`).
-- **Effort / schedule estimate.** Complex (Tier 0), **8–12 days**, high risk.
-- **Key risks.**
-  - **R-1 (high):** Signature normalization + caller updates touch 17 action files plus both dispatchers;
-    a missed caller silently breaks dispatch — mitigated by `**kwargs` absorption and the dual-path
-    routing test (TAS-1).
-  - **R-2 (medium):** CI matrix flakiness across 4 OS legs × 3 Python versions (Qt/`QApplication` headless,
-    Windows `rlimit` absence) — mitigated by NFR-4/EC-1 gating and real-`QApplication` fixtures.
-  - **R-3 (medium):** B3's behaviour change (unknown tool now raises) could surface latent callers relying
-    on the silent fallback — mitigated by the B3 regression test (TAS-4) and the intentional-change note
-    (EC-5).
-  - **R-4 (low):** `shutdown_jarvis` killing the test runner if its mock is missed — mitigated by FR-4.3 /
-    EC-3.
-  - **R-5 (low):** Re-introduction of the "18 tools" miscount by a fresh authoring pass — mitigated by the
-    verbatim §6 enumeration and the Lessons Applied note.
-- **Requirement notes.** The intake "18 tools / normalize 18 signatures" figure is a confirmed arithmetic
-  miscount; the verified count is **17** action-backed tools (10 missing `speak` + 7 with `speak`). The
-  3 inline tools are main-only and tested individually, not through both paths.
-
----
-
-## 9. Acceptance Checklist (mirrors intake AC1–AC4; each item is testing-phase-verifiable)
-
-- [ ] **AC1 — CI green + Rust placeholder + smoke job.** CI is green on all matrix legs (macos-14,
-  macos-13, Windows, Linux × Py3.11/3.12/3.13); the Rust wheel-build job is present as a non-blocking
-  placeholder; the `import mark_xl_rust` smoke job is present and skips cleanly when the wheel is absent.
-  (Verifies FR-5, TAS-8.)
-- [ ] **AC2 — Dual-path dispatch for all 17 action tools.** All 17 action tools (§6) dispatch through
-  **both** `main._execute_tool` and `executor._call_tool` in the parametrized test, with `player` and
-  `speak` forwarded on both paths. (Verifies FR-1.1, FR-1.2, FR-2, FR-4.2, TAS-1.)
-- [ ] **AC3 — 4 bugs fixed, each with a regression test.** B1, B2, B3, B4 are fixed and each has a
-  dedicated regression test that fails pre-fix and passes post-fix. (Verifies FR-1, TAS-2..TAS-5.)
-- [ ] **AC4 — flag-OFF == baseline.** The flag system defaults all flags OFF and nothing in WO-0 is gated;
-  with flags OFF, behaviour equals baseline. Verifiable: the flag schema exists, `get_flag` returns OFF by
-  default, and no WO-0 fix/normalization is wrapped in a flag. (Verifies FR-3, NFR-3, TAS-7.)
-
----
+- WO-7 skills engine / discovery — ONLY the trace SCHEMA must be WO-7-ready; no engine port, no discovery code in WO-6. **[converge c1: trace/telemetry WRITE is IN scope for WO-6, not deferred.]**
+- The Rust *agent* classes (they require a live-engine bridge); only the hermetic single-`path` storage primitives are in scope.
+- DSPy / GEPA / RL.
+- OJ paradigm agents.
+- Any NEW dispatch path — reuse the WO-2 tool registry.
+- Any second threading mechanism — mirror the WO-1 `core/mark_xl_rust_adapter.py` adapter.
+- **Multi-OS wheels (x86 macOS / Linux / Windows wheels)** — the wheel targets arm64 macOS ONLY; other platforms run wheel-absent/legacy.
+- **New Rust storage logic or telemetry-schema changes** — the rebuild only EXPOSES existing Rust `save`/`record` methods via PyO3.
 
 ## Lessons Applied
 
-Source: `pipeline/memory/0-constitution-reflect.md` (Phase 0 RARV).
+Prior reflections consulted: harness `MEMORY.md` (WO-0..WO-5 per-WO memories + `markxl-stack-merged-to-main`), `pipeline/memory/0-constitution-reflect.md`, `pipeline/memory/phase_1-reflect.md`, `pipeline/memory/phase_2-reflect.md`. No `pipeline/tasks/learnings.md` exists yet (first WO through the 7-phase pipeline).
 
-- **L-1 — "17 tools, not 18" (the miscount).** The intake/spec package's "18 tools" is a confirmed
-  arithmetic miscount (10-missing-`speak` + 7-with-`speak` = 17 action files, verified by `ls actions/*.py`
-  → 17). *How it shaped this spec:* §6 fixes the canonical count at 17, copied verbatim from intake; the
-  3 inline tools (`agent_task`/`save_memory`/`shutdown_jarvis`) are explicitly separated as main-only
-  (FR-4.3, EC-7); R-5 flags re-introduction of the miscount as a tracked risk.
-- **L-2 — Dual-path testing is a routing/wiring assertion, not live execution.** Many tools have real
-  side effects and `shutdown_jarvis` calls `os._exit(0)`. *How it shaped this spec:* FR-4.2 and TAS-1
-  specify patching each `actions.X` entry point with a mock and asserting forwarding of `player`+`speak`,
-  with no live side effects; EC-3 and FR-4.3 mandate mocking `shutdown_jarvis`'s exit.
-- **L-3 — Do NOT flag the bug fixes (WO-0 gates nothing).** The bug fixes and signature normalization are
-  unconditional corrections, not flagged changes; the flag system is built but gates nothing. *How it
-  shaped this spec:* FR-1/FR-2 are stated as unconditional; FR-3.2, NFR-3, the Out-of-Scope list, AC4, and
-  TAS-7 all assert "no WO-0 change is flag-wrapped; all flags default OFF."
-
-No additional applicable lessons were found in a cross-project durable store for this project (the harness
-auto-memory loaded this session belongs to a different project, `personal-finance-analyzer`; no
-`pipeline/tasks/learnings.md` exists yet for Mark-XL).
+- **WO-0 get_flag allowlist is an EXACT-SET test via SUBSTRING scan** (test_flags.py:131,139). Applied: FR-18 requires extending the exact set AND its failure message in lockstep, with no stray `get_flag` substring; preferred WO-3-style pass-bools-in to keep callers minimal.
+- **StoreExecutor = the WO-1 `mark_xl_rust_adapter` pattern; do NOT invent a second mechanism** (FR-11, pinned to mark_xl_rust_adapter.py:17-25,56-62).
+- **Storage primitives are hermetic (single `path`, no Tokio reactor)** (every store FR; Rust agent classes Out of Scope).
+- **flag-OFF must equal byte-identical baseline and wheel-absent must also fall back** (NFR-3 + NFR-4; AC6 tests both — now also the normal Linux/Windows state).
+- **Session persistence (WO-6) is DISTINCT from WO-4's `core/memory_v2.py` semantic FACT memory** (FR-4).
+- **V&V/local green is macOS-only; Windows/Linux regressions slip past local runs** (`markxl-local-vnv-is-macos-only`). Applied: NFR-7/AC7 pin arm64-mac for the wheel and require Linux/Windows green with store tests skipped; `.as_posix()` all path strings.
+- **[converge c1] Verify capability by EXERCISING the wheel AND reading the Rust source, not export-name presence** (Phase-2 lesson + this converge). The Python-boundary read-only finding was real; reading `store.rs`/`types.rs` revealed the Rust write path already exists, shrinking Option 3 to binding-exposure only.
+- **[converge c1] WO-4 wheel-rebuild gotchas** (`wo4-memory-shipped`): `source $HOME/.cargo/env` before maturin; PyO3 arg-order trap. Applied to the rebuild work in the addendum.

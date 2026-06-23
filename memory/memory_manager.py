@@ -4,6 +4,25 @@ from threading import Lock
 from pathlib import Path
 import sys
 
+# ---------------------------------------------------------------------------
+# WO-6 — optional PyO3 wheel import guard (FR-4/FR-5/FR-6).
+#
+# The mark_xl_rust wheel is rebuilt for arm64 macOS only. On any platform where
+# the wheel is absent, this module still imports cleanly with
+# _WHEEL_AVAILABLE = False and every SessionStore path degrades to the legacy
+# flat-JSON FACT behaviour (NFR-4). No store path raises solely because the
+# wheel is missing.
+# ---------------------------------------------------------------------------
+try:
+    import mark_xl_rust as _rust
+    _WHEEL_AVAILABLE = True
+except ImportError:
+    _rust = None
+    _WHEEL_AVAILABLE = False
+
+# Shared single-writer store executor + WAL helper (zero import-time side effects).
+from core import store_executor as _store_executor_mod
+
 
 def get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -213,3 +232,187 @@ def forget(key: str, category: str = "notes") -> str:
 
 
 forget_memory = forget
+
+
+# ===========================================================================
+# WO-6 SessionStore integration + JSON to SQLite migration (FR-4/FR-5/FR-6).
+# Conversation/session memory DISTINCT from WO-4 core/memory_v2.py and from the
+# flat-JSON FACT store above. The use_session_store flag is passed IN by callers
+# (no flag read here). No store is constructed at import time.
+# ===========================================================================
+
+
+def _make_session_store(db_path: str, use_session_store: bool):
+    """Return a SessionStore or None. Never raises (None == legacy mode)."""
+    if not use_session_store or not _WHEEL_AVAILABLE:
+        return None
+    try:
+        safe = Path(db_path).as_posix()
+        _store_executor_mod.ensure_wal(safe)
+        return _rust.SessionStore(safe)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "SessionStore init failed, falling back to legacy", exc_info=True
+        )
+        return None
+
+
+# tasks.md step 1 names the factory `_session_store`; expose both spellings.
+_session_store = _make_session_store
+
+
+def migrate_sessions_if_needed(
+    source_path: str, db_path: str, use_session_store: bool
+) -> None:
+    """Migrate JSON conversation history into the SessionStore SQLite DB.
+
+    DESIGN (design.md section 7): memory/long_term.json is flat-JSON FACT memory
+    with NO message log today, so the first run is a DOCUMENTED NO-OP: create an
+    empty source if none exists, write a .bak backup (fsync file fd + dir fd)
+    BEFORE any SQLite write, then round-trip 0 messages (0-message round-trip ==
+    PASS, AC4). The same path carries real messages when a source later exists.
+
+    Crash-safe: the .bak is durably flushed BEFORE the store is opened.
+    Idempotent: if source_path + ".bak" already exists from a crashed prior
+    attempt, the migration resumes from the .bak (loss-free by construction).
+
+    use_session_store False or wheel absent: no-op. No .bak, no DB, legacy path
+    untouched (FR-6, byte-identical to baseline).
+    """
+    if not use_session_store or not _WHEEL_AVAILABLE:
+        return
+
+    import json as _json
+    import os
+    import shutil
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    source = Path(source_path)
+    bak_path = Path(source_path + ".bak")
+
+    def _fsync_path(path: Path) -> None:
+        """fsync a file's bytes then fsync its containing directory (durable)."""
+        try:
+            with open(str(path), "ab") as fd:
+                os.fsync(fd.fileno())
+        except Exception:
+            pass
+        try:
+            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except Exception:
+            pass
+
+    # Step 1: determine the message list, writing .bak BEFORE any DB write.
+    if bak_path.exists():
+        # Resume from an existing .bak (a prior run crashed after writing .bak).
+        logger.info("migrate_sessions_if_needed: resuming from existing .bak")
+        try:
+            raw = _json.loads(bak_path.read_text(encoding="utf-8"))
+        except Exception:
+            raw = []
+        messages = raw.get("messages", []) if isinstance(raw, dict) else (
+            raw if isinstance(raw, list) else []
+        )
+    elif source.exists():
+        # Read the source, then write + fsync the .bak FIRST (crash-safe, PF-2).
+        try:
+            raw = _json.loads(source.read_text(encoding="utf-8"))
+        except Exception:
+            raw = {}
+        # long_term.json is FACT memory with no "messages" key -> 0-message no-op.
+        messages = raw.get("messages", []) if isinstance(raw, dict) else (
+            raw if isinstance(raw, list) else []
+        )
+        shutil.copy2(str(source), str(bak_path))
+        _fsync_path(bak_path)
+    else:
+        # No source exists today -- create an empty .bak, 0 messages (no-op).
+        bak_path.write_text("[]", encoding="utf-8")
+        _fsync_path(bak_path)
+        messages = []
+
+    if not isinstance(messages, list):
+        messages = []
+
+    # Step 2 + 3: construct the store and run the FULL migration on ONE thread.
+    #
+    # The PyO3 SessionStore is `unsendable` (sessions.rs:5) — it panics if any
+    # method is called from a thread other than the one that constructed it. So
+    # the store is built AND used entirely inside this one closure, which we hand
+    # to store_executor.submit so it runs on the single-writer pool thread. That
+    # both honours the unsendable contract and routes the writes through the
+    # single-writer pool (contracts/store_wrappers.md §2). The path is
+    # `.as_posix()`-normalised and `ensure_wal` runs on the pool thread, before
+    # the ctor, inside the closure below (design.md:107-110).
+    safe_db = Path(db_path).as_posix()
+
+    def _do_migration() -> int:
+        # Build the store on THIS (pool) thread — never crosses a thread boundary.
+        try:
+            _store_executor_mod.ensure_wal(safe_db)
+            store = _rust.SessionStore(safe_db)
+        except Exception as exc:  # pragma: no cover - wheel/ctor failure
+            logger.warning(
+                "migrate_sessions_if_needed: store construction failed: %s", exc
+            )
+            return -1
+
+        # get_or_create returns a JSON Session string (serde) -> parse session_id.
+        created = store.get_or_create(
+            "user_default", "cli", "cli_user", "Default User"
+        )
+        parsed = _json.loads(created) if isinstance(created, str) else {}
+        session_id = parsed.get("session_id")
+        if not session_id:
+            logger.warning("migrate_sessions_if_needed: no session_id, skipping")
+            return -1
+
+        migrated = 0
+        for record in messages:
+            if not isinstance(record, dict):
+                continue
+            role = record.get("role", "user")
+            content = record.get("content", "")
+            channel = record.get("channel", "cli")
+            if not content:
+                continue
+            store.save_message(session_id, role, content, channel)
+            migrated += 1
+
+        # Round-trip verification — read every migrated message back identically.
+        listed = store.list_sessions(False, 1000)
+        sessions = _json.loads(listed) if isinstance(listed, str) else []
+        read_back = 0
+        for sess in sessions if isinstance(sessions, list) else []:
+            if isinstance(sess, dict) and sess.get("session_id") == session_id:
+                read_back = len(sess.get("messages", []) or [])
+                break
+        if read_back != migrated:
+            logger.warning(
+                "migrate_sessions_if_needed: round-trip mismatch "
+                "(migrated=%d, read_back=%d)",
+                migrated,
+                read_back,
+            )
+        return migrated
+
+    try:
+        migrated = _store_executor_mod.submit(_do_migration).result(timeout=30.0)
+    except Exception as e:
+        logger.warning("migrate_sessions_if_needed: migration failed: %s", e)
+        return
+
+    if migrated < 0:
+        return
+    logger.info(
+        "migrate_sessions_if_needed: migrated %d messages (no-op if 0), "
+        "round-trip verified",
+        migrated,
+    )

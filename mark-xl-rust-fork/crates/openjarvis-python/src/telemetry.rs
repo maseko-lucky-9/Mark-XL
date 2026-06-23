@@ -10,6 +10,8 @@ pub struct PyTelemetryStore {
 
 #[pymethods]
 impl PyTelemetryStore {
+    // AC5b note: TelemetryStore exposes record/count/clear only (no get/list_records in Rust).
+    // Read-back for tests uses TelemetryAggregator.stats() + store.count().
     #[new]
     #[pyo3(signature = (path=None))]
     fn new(path: Option<&str>) -> PyResult<Self> {
@@ -33,6 +35,127 @@ impl PyTelemetryStore {
         self.inner
             .clear()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+
+    #[pyo3(signature = (model_id, prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_seconds=0.0, ttft=0.0, cost_usd=0.0, timestamp=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn record(
+        &self,
+        model_id: &str,
+        prompt_tokens: i64,
+        completion_tokens: i64,
+        total_tokens: i64,
+        latency_seconds: f64,
+        ttft: f64,
+        cost_usd: f64,
+        timestamp: Option<f64>,
+    ) -> PyResult<()> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let ts = timestamp.unwrap_or_else(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+        });
+        let rec = openjarvis_core::TelemetryRecord {
+            model_id: model_id.to_string(),
+            prompt_tokens,
+            completion_tokens,
+            total_tokens,
+            latency_seconds,
+            ttft,
+            cost_usd,
+            timestamp: ts,
+            ..Default::default()
+        };
+        self.inner
+            .record(&rec)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))
+    }
+}
+
+/// Python wrapper for a persisted TelemetryRecord row.
+///
+/// AC5b resolution note: TelemetryStore in Rust (telemetry/src/store.rs) provides only
+/// `record`, `count`, and `clear` — there is no `get` or `list_records` method.
+/// Therefore, AC5b telemetry round-trip verification must use `TelemetryAggregator.stats()`
+/// and `TelemetryStore.count()` rather than a direct field-level read-back. The
+/// `PyTelemetryRecord` pyclass is exposed so Python callers can construct typed records,
+/// but read-back for AC5b uses aggregator stats (non-zero after ≥1 record call).
+#[pyclass(name = "TelemetryRecord")]
+#[derive(Clone)]
+pub struct PyTelemetryRecord {
+    inner: openjarvis_core::TelemetryRecord,
+}
+
+#[pymethods]
+impl PyTelemetryRecord {
+    #[new]
+    #[pyo3(signature = (model_id, prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_seconds=0.0, ttft=0.0, cost_usd=0.0, timestamp=0.0))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        model_id: &str,
+        prompt_tokens: i64,
+        completion_tokens: i64,
+        total_tokens: i64,
+        latency_seconds: f64,
+        ttft: f64,
+        cost_usd: f64,
+        timestamp: f64,
+    ) -> Self {
+        Self {
+            inner: openjarvis_core::TelemetryRecord {
+                model_id: model_id.to_string(),
+                prompt_tokens,
+                completion_tokens,
+                total_tokens,
+                latency_seconds,
+                ttft,
+                cost_usd,
+                timestamp,
+                ..Default::default()
+            },
+        }
+    }
+
+    #[getter]
+    fn model_id(&self) -> &str {
+        &self.inner.model_id
+    }
+
+    #[getter]
+    fn prompt_tokens(&self) -> i64 {
+        self.inner.prompt_tokens
+    }
+
+    #[getter]
+    fn completion_tokens(&self) -> i64 {
+        self.inner.completion_tokens
+    }
+
+    #[getter]
+    fn total_tokens(&self) -> i64 {
+        self.inner.total_tokens
+    }
+
+    #[getter]
+    fn latency_seconds(&self) -> f64 {
+        self.inner.latency_seconds
+    }
+
+    #[getter]
+    fn ttft(&self) -> f64 {
+        self.inner.ttft
+    }
+
+    #[getter]
+    fn cost_usd(&self) -> f64 {
+        self.inner.cost_usd
+    }
+
+    #[getter]
+    fn timestamp(&self) -> f64 {
+        self.inner.timestamp
     }
 }
 

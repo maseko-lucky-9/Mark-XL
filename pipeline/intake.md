@@ -1,51 +1,67 @@
-# Intake — WO-0 (Foundations)
+# Intake — WO-6 (Maturity: unified stores + packaging)
 
 ## Problem statement
-Mark-XL has no tests, no CI, no feature-flag system, four live dispatch bugs, and heterogeneous tool
-signatures; nothing downstream is safely verifiable until these are fixed.
+Mark-XL's task queue is in-memory (lost on restart), there is no telemetry/trace persistence, and there is no
+packaging. Adopt OJ's bundled-SQLite stores under the threading contract, finalize packaging, and make the trace
+store ready for WO-7 discovery.
 
 ## Complexity tier
-**Complex** (Tier 0, 8–12 d, high risk). Single bounded context (the dispatch + foundations layer);
-no scope-decomposition warning. Not dual-client (`intake.dual_client = false`).
+**Complex** (Tier B, 2–3 wk, med risk). Single bounded context (the persistence/packaging layer). Not dual-client.
+`intake.dual_client = false`.
 
-## Scope (verified against the real code on branch wo-0-foundations @ origin/main fb46b5e)
-1. **Fix 4 live bugs** (all confirmed against the code):
-   - B1 `main.py:896` — `flight_finder(parameters=args, player=self.ui)` drops `speak`; `flight_finder.py:284`
-     accepts `speak=None`. Fix: pass `speak=self.speak`.
-   - B2 `agent/executor.py:_call_tool` — missing `file_processor`; tool list out of sync. Fix: add it (and
-     reconcile to the full action-tool set), normalize calls to forward `player`/`speak`.
-   - B3 `agent/executor.py:243-245` — silent generated-code fallback for unknown tools. Fix: delete; raise on unknown.
-   - B4 `agent/planner.py:22-132` — `PLANNER_PROMPT` lists 16 tools, missing `file_processor` (and `agent_task`).
-     Fix: add the missing planner-visible tools (WO-2 will auto-generate this; WO-0 just corrects the list).
-2. **Normalize 17 action tool signatures** in `actions/*.py` to `(parameters, player=None, speak=None, **kwargs) -> str`.
-   10 currently lack `speak`. Drop the dead `session_memory` AND dead `response` params (both unused;
-   `**kwargs` absorbs them from any un-updated caller). Update callers in `main.py`/`executor.py` in the same pass.
-3. **Feature-flag system** — extend `memory/config_manager.py` with a flag schema + `get_flag()`; all gates default OFF.
-4. **pytest harness from zero** — `conftest.py` + fixtures (real `QApplication`/`QTest`, Ollama mock, thread fixtures);
-   parametrized test dispatching every action tool through BOTH `main._execute_tool` and `executor._call_tool`
-   with mock `player`/`speak` (routing/wiring assertion via patched action entry points — NOT live side effects).
-5. **CI (GitHub Actions)** — test matrix (macOS macos-14 + macos-13, Windows, Linux × Py 3.11–3.13). Rust
-   wheel-build job = **placeholder stub** (WO-1 produces `mark_xl_rust`); do not block WO-0 on it. Record abi3=true.
+## Dependencies (all satisfied)
+WO-0 (CI, flags, tests), WO-1 (wheel + adapter threading pattern), WO-2 (registry — no 2nd dispatch). All merged to
+fork `main@cfcd5db`. WO-3/4/5 also merged (not strict deps but present).
 
-## SPEC CORRECTION (factual, recorded per advisor + cross-check)
-The intake package says "18 tools" and "normalize 18 signatures". The **verified count is 17 action-backed
-tools** (one function per `actions/*.py`, 17 files). The math is conclusive: 10 missing `speak` + 7 with `speak`
-(code_helper, dev_agent, screen_process, youtube_video, file_processor, flight_finder, game_updater) = 17.
-The "18th" is `agent_task` (and/or `save_memory`/`shutdown_jarvis`), which are **inline-handled in main only** and
-absent from `executor._call_tool`, so they categorically cannot "dispatch through both paths". They get
-main-only individual tests instead. This is a spec arithmetic fix, not a scope change → proceed autonomously;
-logged for the final report.
+## Scope (verified against live code on wo-6-maturity @ origin/main cfcd5db)
+1. **Scheduler store** — replace `agent/task_queue.py` in-memory list (confirmed: list+lock, lines 37-210) with
+   `SchedulerStore` (methods: create_task, get_task, list_tasks, update_status, delete_task, record_run). Preserve
+   priority/status semantics. Route through StoreExecutor. Scheduled task survives restart.
+2. **Session store** — add conversation persistence via `SessionStore` (get_or_create, save_message, list_sessions,
+   link_channel, consolidate, decay) in `memory/memory_manager.py`. Auto-migrate the JSON conversation history;
+   write `.bak`. NOTE: WO-4 added `core/memory_v2.py` (semantic FACT memory) — that is distinct; WO-6 adds CONVERSATION
+   session persistence. memory_manager.py currently has NO conversation/session handling (verified).
+3. **Trace store** (new `core/trace_collector.py`) — capture tool calls / outcome / latency via `TraceStore` +
+   `TraceCollector`. Must hold 1000+ traces. **Feeds WO-7** (the trace schema must be WO-7-ready).
+4. **Telemetry store** (new `core/telemetry.py`) — latency/tokens/model per call via `TelemetryStore` +
+   `TelemetrySample` (+ TelemetryAggregator).
+5. **Threading contract** (new `core/store_executor.py`) — `ThreadPoolExecutor(max_workers=1)` + Qt signals + WAL +
+   single writer. **Mirror the proven WO-1 `core/mark_xl_rust_adapter.py` pattern** (lazy daemon-safe pool, atexit
+   shutdown wait=False, RustResultBridge-style Qt signal marshalling). Reuse, do not reinvent.
+6. **Packaging** — create MISSING `pyproject.toml` (entry point `mark-xl` + `python -m mark_xl`), MISSING `LICENSE`
+   (MIT), MISSING `NOTICE` (Apache-2.0 attribution for vendored OJ crates); pin `requirements.txt` (present, 54 lines);
+   extend existing `docs/VENDORING.md` (present, 84 lines) with the quarterly git-subtree/rsync sync note.
 
-## Canonical tool enumeration (source of truth for the parametrized test)
-**17 dual-path action tools:** open_app, web_search, weather_report, send_message, reminder, youtube_video,
-screen_process, computer_settings, browser_control, file_controller, desktop_control, code_helper, dev_agent,
-computer_control, game_updater, flight_finder, file_processor.
-**3 special inline tools (main-only, individual tests):** save_memory (`__SILENT__`), agent_task (task queue),
-shutdown_jarvis (spawns daemon thread → `os._exit(0)`; MUST be mocked in tests).
+## Verified facts (from orientation — do not re-derive)
+- Wheel exports ALL needed stores: SchedulerStore, SessionStore, TraceStore, TraceCollector, TelemetryStore,
+  TelemetrySample, TelemetryAggregator, TelemetrySessionCore, TraceAnalyzer, TraceDrivenPolicy, A2ATaskStore (89 total).
+- All four stores construct HERMETICALLY with a single `path` arg — no Tokio reactor (WO-1 carry-forward confirmed for
+  storage primitives; only the Rust *agent* classes need a live engine bridge).
+- Existing flag rail `config/flags.json` (9 keys, incl. WO-1..WO-5 flags). WO-6 adds new flags, all default OFF.
+- **WO-0 recurring test defect (carry-forward #64):** `tests/test_flags.py::test_no_production_code_calls_get_flag`
+  asserts ZERO production get_flag callers. WO-6 adds sanctioned callers -> MUST extend that allowlist (it should
+  become a maintained allowlist at the WO-0 source; each WO that adds a caller updates it).
+- No existing SessionStore/SchedulerStore/TraceStore/TelemetryStore/store_executor/trace_collector references in py
+  (clean greenfield for the stores).
+- Packaging: pyproject.toml MISSING, LICENSE MISSING, NOTICE MISSING; requirements.txt + docs/VENDORING.md PRESENT.
+
+## Constraints
+Never call sync stores from the Qt main thread; WAL on all DBs; single writer; task-queue loss on restart is
+acceptable, session continuity is NOT; trace store must hold 1000+ traces for WO-7. Wheel optional -> graceful
+degrade when WHEEL_AVAILABLE False or flag OFF. flag-OFF == baseline.
 
 ## Acceptance criteria
-- AC1: CI green on all matrix legs; Rust wheel job present as a non-blocking placeholder; `import mark_xl_rust`
-  smoke job present (skips cleanly when wheel absent).
-- AC2: All 17 action tools dispatch through BOTH paths in the parametrized test, with `player` and `speak` forwarded.
-- AC3: The 4 bugs are fixed, each with a regression test.
-- AC4: flag-OFF == baseline (trivially: nothing in WO-0 is gated; flag system defaults all OFF).
+- AC1: Scheduled task survives restart (persist to SchedulerStore, reload on start).
+- AC2: Concurrency test — QTimer + 100 writes holds ≥30 FPS (no Qt main-thread stalls); WAL enabled on all DBs.
+- AC3: `python -m mark_xl` entry point works (pyproject.toml + __main__).
+- AC4: JSON→SQLite session migration loss-free (.bak written + round-trip test).
+- AC5: Trace store holds 1000+ traces; schema is WO-7-discovery-ready.
+- AC6: flag-OFF == baseline (legacy in-memory/JSON behavior unchanged when WO-6 flags OFF / wheel absent).
+- AC7: CI green on the required matrix (macOS-arm64 + Win + Linux × Py3.11–3.13; macOS-13 informational).
+- AC8: LICENSE (MIT) + NOTICE (Apache-2.0 attribution) present; requirements pinned; VENDORING.md sync note added.
+
+## Scope-decomposition note (non-blocking)
+WO-6 spans 4 new store integrations + packaging = ~5 bounded sub-areas but ONE context (persistence/packaging). Under
+the >3-context / >20-task heuristic this is borderline; the task decomposition (Phase 4) should keep it to ~15-20
+tasks. If Development finds it exceeds ~20 tasks, flag for a split (scheduler+session as lane A, trace+telemetry as
+lane B, packaging as lane C) — non-blocking suggestion, not a hard split.

@@ -1,11 +1,12 @@
 {
   "taskId": "T08",
-  "timestamp": "2026-06-21T00:00:00Z",
+  "timestamp": "2026-06-23T15:33:21+00:00",
   "buildPassed": true,
   "typecheckPassed": true,
   "testsPassed": true,
-  "testsAdded": 0,
-  "testCommand": "python -m py_compile agent/planner.py",
-  "testOutput": "No errors",
-  "filesChanged": ["agent/planner.py"]
+  "testsAdded": 5,
+  "testCommand": "cd /Users/ltmas/Repo/agents/mark-xl && source .venv-mac/bin/activate && python -m pytest tests/test_wo6_stores.py::test_session_migration_bak_written tests/test_wo6_stores.py::test_session_store_off_baseline -v",
+  "testOutput": "collected 2 items\n\ntests/test_wo6_stores.py::test_session_migration_bak_written PASSED      [ 50%]\ntests/test_wo6_stores.py::test_session_store_off_baseline PASSED         [100%]\n\n============================== 2 passed in 0.03s ===============================",
+  "filesChanged": ["memory/memory_manager.py", "tests/test_wo6_stores.py"],
+  "notes": "5 T08 tests added (2 named in the task + 3 hardening: with-messages round-trip, idempotent .bak resume, factory alias). All 5 pass. Full WO-6 stores suite 12/12 deterministic across 5 runs; WO-4 P1 FACT-memory regression 13/13; tests/test_flags.py 7/7 (FR-18 guard). get_flag count == 0. typecheckPassed reflects clean py_compile (no mypy/pyright/ruff gate configured in repo). Wheel API corrected vs task pseudocode: get_or_create(user_id,channel,channel_user_id,display_name)->JSON, save_message(session_id,role,content,channel), list_sessions(active_only,limit)->JSON. SessionStore is PyO3 unsendable, so the migration constructs+uses the store entirely inside one store_executor.submit closure on the single-writer thread."
 }

@@ -63,9 +63,23 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
 
+      # arm64-store tests: run only on macos-14; AC6 parity tests run everywhere
+      # arm64-only store tests are marked @pytest.mark.skipif(...) in test_wo6_stores.py
       - name: Run tests (Windows/macOS)
         if: runner.os != 'Linux'
         run: pytest -q
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      # Dedicated arm64 store test step (T20/NFR-7/AC7): exercises TraceStore,
+      # TelemetryStore, SchedulerStore, SessionStore round-trips that require the
+      # compiled wheel on Apple Silicon.  The skipif markers inside the file ensure
+      # arm64-only tests are silently skipped on Windows/Linux (which still collect
+      # and run the AC6 flag-OFF + wheel-absent-fallback baseline tests via the
+      # general pytest step above).
+      - name: Run arm64 store tests (macos-14 only)
+        if: matrix.os == 'macos-14'
+        run: python -m pytest tests/test_wo6_stores.py -q
         env:
           QT_QPA_PLATFORM: offscreen
 
@@ -91,7 +105,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, ubuntu-latest, windows-latest]
+        # WO-6: wheel is arm64 macOS ONLY (no multi-OS wheel matrix) per design.md/spec.md.
+        os: [macos-14]
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -103,6 +118,14 @@ jobs:
 
       - name: Install Rust 1.88 (matches rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@98e1b82157cd469e843cb7f524c1313b4ad9492c # 1.88
+
+      - name: Set up cargo environment (PF-1)
+        shell: bash
+        run: |
+          # PF-1: source cargo env so rustup/cargo is on PATH for maturin
+          # (maturin-action uses the dtolnay toolchain; this step ensures any
+          # shell-level cargo calls also work, matching local dev procedure)
+          source "$HOME/.cargo/env" || true
 
       - name: Build mark_xl_rust abi3 wheel (maturin)
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -130,8 +153,9 @@ jobs:
           import mark_xl_rust as m
           assert m.__name__ == "mark_xl_rust", m.__name__
           names = [n for n in dir(m) if not n.startswith("_")]
-          # agent + security + storage classes must be present (AC2)
-          for cls in ("SimpleAgent", "LoopGuard", "SecretScanner", "SQLiteMemory"):
+          # agent + security + storage classes must be present (AC2);
+          # TelemetryRecord confirms the new WO-6 bindings are registered.
+          for cls in ("SimpleAgent", "LoopGuard", "SecretScanner", "SQLiteMemory", "TelemetryRecord"):
               assert cls in names, f"missing {cls}"
           print(f"import OK — {len(names)} exported names")
           PY

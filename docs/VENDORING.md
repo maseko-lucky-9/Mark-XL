@@ -82,3 +82,39 @@ python -c "import mark_xl_rust; print(mark_xl_rust.__name__)"
 
 OpenJarvis is Apache-2.0. The vendored tree carries its license; Mark-XL ships a
 `NOTICE` and an MIT `LICENSE` (see WO-6 packaging). Apache-2.0 -> MIT is compatible.
+
+## Arm64 macOS Wheel Rebuild
+
+The `mark_xl_rust` wheel is built for arm64 macOS **only** (no Linux or Windows wheel). After any change to the Rust crate source (or a periodic refresh), rebuild the wheel using the exact sequence below:
+
+```bash
+# 1. Ensure cargo is on PATH (required — do not skip)
+source "$HOME/.cargo/env"
+
+# 2. Activate the project virtual environment
+source /Users/ltmas/Repo/agents/mark-xl/.venv-mac/bin/activate
+
+# 3. Navigate to the PyO3 crate
+cd /Users/ltmas/Repo/agents/mark-xl/mark-xl-rust-fork/crates/openjarvis-python
+
+# 4. Build and install into the active venv (editable, for development)
+maturin develop --release
+
+# OR: build a distributable wheel artifact
+maturin build --release --out /Users/ltmas/Repo/agents/mark-xl/dist/
+pip install --force-reinstall /Users/ltmas/Repo/agents/mark-xl/dist/mark_xl_rust-*.whl
+```
+
+**Notes:**
+- `manylinux: "off"` — this is a native host build, not a manylinux container build.
+- The resulting `.whl` is placed in `dist/` and should be re-vendored per the rsync procedure above.
+- Only arm64 macOS (Darwin arm64) can run Rust-backed store tests; Linux and Windows CI skip them automatically via `@pytest.mark.skipif(not WHEEL_AVAILABLE or ...)` markers.
+- See `docs/decisions/004-wo6-wheel-write-path-arm64.md` for the ADR explaining this arm64-only choice.
+
+## Quarterly Sync
+
+To sync the vendored Rust crate source (not the wheel) with upstream OpenJarvis:
+
+1. Use the rsync procedure documented above (NOT git subtree — the vendor is a plain directory copy).
+2. After syncing the crate source, rebuild the arm64 wheel following the **Arm64 macOS Wheel Rebuild** procedure above.
+3. Re-run `python -m pytest tests/test_wo6_stores.py` on arm64 macOS to confirm the wheel still passes all store tests.

@@ -1,267 +1,94 @@
-# Phase 3 Pre-Flight Gate Report — WO-0 (Foundations)
-
-Generated: 2026-06-20
-Branch: wo-0-foundations
-Gate executor: security-auditor (claude-sonnet-4-6)
-
----
-
-## Machine-Readable Contract
-
-```
-secrets_status: clean
-destructive_ops: none
-risk_tier: medium
-scope_status: within
-banned_stack: pass
-```
-
----
-
-## Gate 1: Secrets Scan
-
-**Tool used:** gitleaks (installed at /opt/homebrew/bin/gitleaks)
-
-**Command:**
-```
-gitleaks detect --source /Users/ltmas/Repo/agents/mark-xl --no-banner -v
-```
-
-**Result:**
-```
-16 commits scanned.
-scanned ~894377 bytes (894.38 KB) in 67.4ms
-no leaks found
-```
-
-**Supplementary manual grep coverage:**
-
-The gitleaks scan covers standard secret patterns including: OpenAI API keys, AWS access key IDs,
-GitHub personal access tokens, Google API keys, Slack tokens, PEM private keys, and hardcoded
-literals for password/api_key/token/secret assignments with substantive values.
-
-1. All JSON files in tree: only `pipeline/state.json` exists — contains pipeline run metadata
-   (run_id, phase status, acceptance criteria). No keys, tokens, or credentials. Inspected directly.
-
-2. `config/` directory: only `config/__init__.py` exists. Reads `api_keys.json` at runtime via
-   `open(_CONFIG_PATH)`. `config/api_keys.json` does NOT currently exist in the tree — confirmed
-   by `find config/ -type f` returning only `config/__init__.py`. No secrets planted.
-
-3. `memory/config_manager.py`: Reads `config/api_keys.json` at runtime via `CONFIG_FILE.read_text()`.
-   No hardcoded literals, no embedded keys.
-
-4. `requirements.txt`: Package list only. No credentials.
-
-5. No `.env` files found anywhere in the tree.
-
-**VERDICT: secrets_status: clean**
-
-No real secret exists anywhere in the working tree. gitleaks 16-commit history scan returned
-"no leaks found". The design explicitly uses PLACEHOLDERS only for the planned `config/api_keys.json`
-(which does not yet exist on-branch).
-
----
-
-## Gate 2: Banned-Stack Check
-
-**Scope of scan:** WO-0 change surface only:
-- actions/*.py (17 files)
-- main.py
-- agent/executor.py
-- agent/planner.py
-- memory/config_manager.py
-- requirements.txt
-
-**Grep pattern checked:** torch, transformers, DSPy, dspy, GEPA, openjarvis, OpenJarvis,
-ToolExecutor, EventBus
-
-**Findings:**
-
-`torch` and `transformers` appear in `main.py` at:
-- main.py:11 — comment block re: USE_TF=0 and transformers lazy-loader (documentation only)
-- main.py:1256-1266 — `import torch` inside a local STT/TTS GPU-detection block
-- main.py:1349-1357 — `_preload_torch()` background thread for TTS warm-up
-
-**Assessment:** These are ALL pre-existing upstream STT/TTS stack references present on
-`origin/main` before WO-0 branched. They are not introduced by WO-0. Per gate instructions:
-"torch/transformers ALREADY EXIST in the upstream STT/TTS stack (main.py, core/stt.py, core/tts.py,
-core/installer.py) — those are PRE-EXISTING, not introduced by WO-0, and are out of scope to purge."
-
-**WO-0 change surface files (agent/, actions/, memory/config_manager.py):**
-ZERO torch / transformers / DSPy / GEPA / openjarvis / ToolExecutor / EventBus imports found.
-
-**requirements.txt:** No torch, transformers, DSPy, GEPA, or openjarvis listed.
-
-**Prose-only references:** `pipeline/spec.md:106` and `pipeline/constitution.md` mention
-ToolExecutor/EventBus in the ban statement — these are documentation prose, not code imports.
-
-**VERDICT: banned_stack: pass**
-
-No new banned dependency is introduced by the WO-0 change surface.
-
----
-
-## Gate 3: Destructive Operations
-
-**Enumeration of all destructive operations introduced by WO-0 design:**
-
-NONE.
-
-**Analysis of each change surface:**
-
-- `actions/*.py` — signature normalization only (parameter list changes). No file deletes,
-  no DB ops, no data mutation.
-- `main.py` — one caller update at main.py:896 to forward `speak` to `flight_finder`.
-  Not destructive.
-- `agent/executor.py` — two changes: (a) add `file_processor` branch, (b) replace silent
-  `else` fallback with `raise`. The `raise` is EC-5 (a bug correction). A raise on
-  unknown-tool-name is not a destructive operation — it is an error-surfacing correction
-  that previously silently called `_run_generated_code`.
-- `agent/planner.py` — add `file_processor` to `PLANNER_PROMPT` text. String change only.
-- `memory/config_manager.py` — add `_FLAG_SCHEMA` dict and `get_flag()` accessor. No writes,
-  no deletes, no mutations of existing data paths.
-- `config/flags.json` (NEW) — a new inert config file with all flags defaulting to False.
-  Not destructive; additive only.
-- `conftest.py` + `tests/` (NEW) — test fixtures and test files. No production data touched.
-- `.github/workflows/*.yml` (NEW) — CI pipeline definition. No destructive git operations.
-- `docs/decisions/001-*.md` (NEW) — ADR document. Additive only.
-
-**The single intended behaviour change (EC-5 / B3):** `executor._call_tool` will raise
-`ValueError` or `KeyError` on an unknown tool name instead of silently calling
-`_run_generated_code`. This is explicitly classified in spec.md:134 as a bug *correction*,
-not a flagged feature. It is not a destructive operation.
-
-**No file deletes, DB drops, force-push, history rewrite, or irreversible data mutations
-are present in the WO-0 design.**
-
-**VERDICT: destructive_ops: none**
-
----
-
-## Gate 4: Scope Check
-
-**Reference:** `/Users/ltmas/Repo/agents/mark-xl/pipeline/spec.md §7 Out of Scope`
-(design.md was not yet authored at time of this gate execution — per instructions, base on
-spec.md §7 + this prompt when design.md is absent.)
-
-**WO-0 defined scope (from spec.md):**
-1. 4 bug fixes (B1-B4): FR-1.1 to FR-1.4
-2. 17-signature normalization: FR-2.1 to FR-2.3
-3. Flag rail (inert, gates nothing): FR-3.1 to FR-3.2
-4. pytest harness from zero: FR-4.1 to FR-4.4
-5. CI matrix with non-blocking Rust placeholder: FR-5.1 to FR-5.3
-
-**Explicit out-of-scope items per spec.md §7:**
-- Real Rust wheel build (WO-1)
-- Registry refactor / auto-generation of tool list (WO-2)
-- Security gates (WO-3)
-- Memory work (WO-4)
-- Loopguard (WO-5)
-- Gating any WO-0 change behind a flag
-
-**Scope verification against change surface:**
-
-| Change | In-scope? | Rationale |
-|--------|-----------|-----------|
-| actions/*.py signature normalization | YES | FR-2 |
-| main.py B1 caller fix (flight_finder speak) | YES | FR-1.1 |
-| executor.py B2 (add file_processor branch) | YES | FR-1.2 |
-| executor.py B3 (raise on unknown tool) | YES | FR-1.3 |
-| planner.py B4 (add file_processor to prompt) | YES | FR-1.4 |
-| memory/config_manager.py flag schema + get_flag() | YES | FR-3.1 |
-| config/flags.json (all OFF) | YES | FR-3.2 |
-| conftest.py + tests/ | YES | FR-4 |
-| .github/workflows/*.yml | YES | FR-5 |
-| docs/decisions/001-*.md (ADR) | YES | NFR (non-trivial decision record) |
-| Registry auto-generation | NOT PRESENT — correctly deferred to WO-2 |
-| Security gate wiring | NOT PRESENT — correctly deferred to WO-3 |
-| Memory subsystem changes | NOT PRESENT — correctly deferred to WO-4 |
-| Loopguard | NOT PRESENT — correctly deferred to WO-5 |
-| Flag-gated bug fix | NOT PRESENT — spec.md FR-3.2 explicitly forbids it |
-
-The planner-prompt correction in planner.py (B4) adds `file_processor` by hand. This is
-explicitly noted in spec.md FR-1.4: "WO-2 will auto-generate this list; WO-0 only corrects
-it by hand." This is in-scope.
-
-**VERDICT: scope_status: within**
-
----
-
-## Risk Tier
-
-**Assigned tier: medium**
-
-**Justification:**
-
-WO-0 touches 17 action files + 2 dispatcher files (main._execute_tool + executor._call_tool).
-This is a broad surface area (19-20 files). However, the risk profile is materially mitigated:
-
-1. **`**kwargs` absorption (EC-4):** Dead parameters (`session_memory`, `response`) on any
-   un-updated caller will be silently absorbed by `**kwargs` rather than raising a TypeError.
-   This is the primary breakage vector and it is mechanically closed.
-
-2. **Pure-Python, no live side effects in WO-0:** No network calls, no file writes to
-   production paths, no DB connections are introduced. The dispatch routing is tested via
-   mock-patching, not live execution.
-
-3. **TAS-1 dual-path routing test:** The parametrized test covers all 17 tools through
-   both dispatch paths with mock `player` and `speak`, giving a deterministic routing
-   regression signal before any downstream WO extends behaviour.
-
-4. **Single intentional behaviour change (B3/EC-5):** The `raise` on unknown tool is
-   well-bounded — it only fires on a tool name that the planner should never emit (and the
-   planner now has the correct tool list). The regression test TAS-4 asserts this explicitly.
-
-5. **Inert flag rail:** `config/flags.json` with all defaults OFF introduces zero observable
-   behaviour change. `get_flag()` returns False for every key by default. Nothing in WO-0
-   reads a flag at runtime.
-
-**Why not low:** 17 files touched; a missed caller or a missed `**kwargs` gap could silently
-break dispatch on an action that lacks a test. Broad surface warrants medium.
-
-**Why not high/critical:** No secrets, no live network/auth surface, no data mutations,
-pure-Python, strong mechanical mitigations, dual-path routing test closes the primary
-regression vector.
-
-**Mitigations on record:**
-- kwargs absorption: spec.md §4 EC-4
-- TAS-1 dual-path routing test: spec.md §5 TAS-1
-
-Design.md (currently being authored) must confirm both mitigations are carried forward.
-
----
-
-## Pre-Flight Gate Summary
-
-| Gate | Verdict | Notes |
-|------|---------|-------|
-| Gate 1: Secrets | PASS (clean) | gitleaks 16-commit scan clean; no api_keys.json on-branch |
-| Gate 2: Banned Stack | PASS | torch/transformers are pre-existing upstream, not WO-0 introductions |
-| Gate 3: Destructive Ops | PASS (none) | B3 raise is a bug correction, not a destructive op |
-| Gate 4: Scope | PASS (within) | All 5 WO-0 deliverables confirmed; no out-of-scope item present |
-| Risk Tier | medium | Broad signature surface + strong kwargs+TAS-1 mitigations |
-
-**Phase 3 (Design) Pre-Flight: CLEARED for development handoff.**
-
-No hard-fail condition exists. secrets_status is clean; banned_stack passes; no destructive
-ops; scope is within bounds; risk tier is medium with mitigations on record.
-
----
-
-## Positive Observations
-
-- No secrets exist in the tree. The design correctly defers `config/api_keys.json` as
-  runtime-written (not source-controlled); only `config/__init__.py` is committed.
-- The `**kwargs` absorption strategy is the right mechanical fix for the dead-parameter
-  problem — it prevents caller breakage during a rolling normalization pass without
-  requiring a single-commit atomic rewrite of all callers.
-- spec.md §6 provides a canonical, numbered tool enumeration that eliminates count drift
-  (the "18 vs 17" miscount was already caught and recorded in state.json:spec_corrections).
-- B3 (raise on unknown tool) is the correct safety posture — silent fallback to LLM-generated
-  code execution on an unknown tool name is a security-adjacent footgun, and the correction
-  is unconditional.
-- The non-blocking Rust placeholder pattern (FR-5.2/FR-5.3) correctly separates CI greenness
-  from wheel availability, avoiding WO-0 being blocked by WO-1 work.
-- The three main-only inline tools (save_memory, agent_task, shutdown_jarvis) are correctly
-  excluded from the dual-path parametrization and tested individually, with shutdown_jarvis
-  mocked to prevent os._exit(0) killing the test runner.
+# Pre-Flight Report — WO-6 (Phase 3 Design gate)
+
+> Phase-3 Pre-Flight security/risk/scope gate. Branch `wo-6-maturity` (base `origin/main@cfcd5db`).
+> Run by the design-lead; secrets scan + tooling delegated to `security-auditor`. Date 2026-06-23.
+> Contract fields (for the YAML handoff): `secrets_status`, `destructive_ops`, `risk_tier`, `scope_status`.
+
+## Gate verdict (summary)
+
+| Field | Value |
+|-------|-------|
+| `secrets_status` | **clean** (HARD-FAIL gate PASSED) |
+| `destructive_ops` | enumerated (all have safety nets — see section 3) |
+| `risk_tier` | **medium** (highest individual: R4 allowlist=HIGH, mitigated; R1 critical=RESOLVED by the rebuild decision) |
+| `scope_status` | **within** (no AC drift beyond converged spec v2) |
+| banned-stack | **PASS** (one justified SQLite exemption — see section 2) |
+| Overall | **PASS** — proceed to Development |
+
+## 1. Secrets scan (HARD FAIL gate)
+
+- **Tool:** gitleaks (installed; used directly). Command: `gitleaks detect --no-banner --redact -v` over `/Users/ltmas/Repo/agents/mark-xl`.
+- **Scope:** 31 commits, ~2.47 MB working tree. A fallback high-signal grep (OpenAI-style key prefixes, AWS access-key prefixes, PEM private-key headers, and `api_key`/`token`/`password` assignment forms) was run over tracked `.py`/`.json`/`.toml`/`.md`, excluding `.venv-mac/`, `mark-xl-rust-fork/target/`, `.git/`, `dist/`.
+- **Findings:** 0 real secrets. 0 grep matches.
+- **Context:** WO-3 ships SYNTHETIC test keys assembled at runtime (harness memory `wo3-shipped-security-gates`) — none present as string literals; no test fixture triggered a hit, consistent with the WO-3 design.
+- **`secrets_status = clean`.** Gate PASSED. (Per the role contract, a `dirty` verdict would be a HARD FAIL → `status: failed`, STOP.)
+
+## 2. Banned-stack check
+
+Per `~/.claude/reference/anti-patterns.md` and `pipeline/constitution.md` section "Banned / out-of-scope".
+
+| Banned item | Present in WO-6 design? | Verdict |
+|-------------|------------------------|---------|
+| WordPress / PHP / Ruby / Laravel | No | PASS |
+| jQuery | No (PyQt6 desktop app) | PASS |
+| DSPy / GEPA / RL | No (explicitly Out of Scope, spec:131) | PASS |
+| OJ paradigm agents (Python ToolExecutor/EventBus) | No (constitution principle 1: thin pure-Python adapters over the wheel only) | PASS |
+| Second threading mechanism | No (`core/store_executor.py` reuses the WO-1 ThreadPoolExecutor + Qt-signal pattern; max_workers=1) | PASS |
+| New dispatch path | No (reuses WO-2 tool registry; spec:122,133) | PASS |
+| Rust *agent* classes | No (only hermetic single-`path` storage primitives) | PASS |
+| Multi-OS wheels | No (arm64 macOS ONLY, per ADR 004) | PASS |
+| **SQLite "for production"** | Yes — the four PyO3 stores are SQLite-backed | **PASS (justified exemption)** |
+
+**SQLite exemption rationale:** `anti-patterns.md` bans "SQLite for production" in the context of multi-tenant network services. Mark-XL is a single-user PyQt6 desktop assistant; SQLite is the correct embedded-store choice (it is the vendored Rust stores' own backing, and WO-3 audit + WO-4 memory already ship SQLite on this app). The WAL + single-writer design (NFR-1/NFR-2) addresses the only real SQLite-concurrency hazard. Not a violation.
+
+## 3. Destructive-ops enumeration
+
+| Operation | Type | Safety net |
+|-----------|------|-----------|
+| `config/flags.json` +4 flags | **additive** | new keys only; flag-OFF default → byte-identical (NFR-3) |
+| JSON→SQLite session migration (FR-5) | **destructive** (writes new DB, reads source) | `.bak` written BEFORE any write; loss-free + round-trippable (NFR-5). **Carry-forward: must be crash-safe** — `shutil.copy2` + fsync the `.bak` before opening the SQLite write; resume-from-`.bak` if it already exists (Pre-Flight LOW finding) |
+| New SQLite DB files (scheduler/session/trace/telemetry) | **additive** | flag-OFF/wheel-absent → no DB created (NFR-4) |
+| Rust wheel rebuild + re-vendor | **destructive** (overwrites vendored binding artifact) | prior wheel importable until replaced; maturin installs atomically; arm64-only |
+| `pyproject.toml` / `LICENSE` / `NOTICE` creation | **additive** | greenfield — no prior file at repo root (verified) |
+| `requirements.txt` pinning (FR-15) | **destructive** (overwrites unpinned file) | git history is recovery path. **Carry-forward: `cp requirements.txt requirements.txt.pre-pin.bak` (or note pre-pin SHA) before overwrite** (Pre-Flight LOW finding) |
+| `docs/VENDORING.md` extend (FR-16) | **additive** | existing 84 lines untouched; file EXISTS (verified) |
+
+## 4. Tooling availability (wheel-rebuild lane feasibility)
+
+| Tool | Present | Version | Note |
+|------|---------|---------|------|
+| Python (`.venv-mac`) | YES | 3.12.9 | activate before any python/pytest |
+| `mark_xl_rust` wheel | YES | importable | all 5 store classes present |
+| maturin | YES (venv only) | 1.14.1 | NOT on system PATH — `source .venv-mac/bin/activate` first |
+| cargo | YES | 1.96.0 | OFF default PATH — `source $HOME/.cargo/env` first (WO-4 lesson) |
+| rustc | YES | 1.96.0 | satisfies `rust-toolchain.toml` channel 1.88 (min) |
+
+**Binding gap re-confirmed live this session:** `TraceStore`=`['count']`, `TelemetryStore`=`['clear','count']`, `TraceCollector`=`['active_count']` — `save`/`get`/`list_traces`/`record` ABSENT today. The rebuild is feasible (toolchain present once venv + cargo-env are sourced).
+
+**CI carry-forward:** the arm64 wheel-build step MUST source BOTH `$HOME/.cargo/env` AND `.venv-mac` before `maturin` (else "command not found").
+
+## 5. Risk register (carried from analysis.md section 6)
+
+| ID | Risk | Tier | Mitigation (design decision) |
+|----|------|------|------------------------------|
+| R1 | trace/telemetry no Python write path | CRITICAL | **RESOLVED** by ADR 004 (rebuild exposes existing Rust `save`/`record`) |
+| R2 | TelemetrySample hardware-only | HIGH | folds into R1; the new `PyTelemetryRecord` is the persistence row, NOT `PyTelemetrySample` |
+| R3 | TraceCollector ctor takes a store not a path | LOW | wired `TraceStore(path)` then `TraceCollector(store)`; real API `start_trace`/`add_step`/`end_trace` |
+| R4 | FR-18 substring-scan + exact-set equality | **HIGH** | **MITIGATED** — pass flag bools INTO new modules; no `get_flag` substring in new files → allowlist stays `{main.py, agent/executor.py}`; `test_flags.py` UNCHANGED |
+| R5 | WAL ownership ambiguous (DB opened in Rust) | MEDIUM | Python runs `PRAGMA journal_mode=WAL` on the owned path before Rust ctor; AC2 asserts |
+| R6 | migration source undefined | MEDIUM | confirmed flat-JSON FACT memory has no message log → first migration is a documented no-op satisfying `.bak`+round-trip |
+| R7 | local V&V macOS-only → Win/Linux regressions slip | MEDIUM | `gh pr checks` is the gate (NFR-7/AC7); `.as_posix()` all path strings |
+| R8 | flag-OFF byte-drift via import side-effects | MEDIUM | no module-level store construction; gate on flag AND WHEEL_AVAILABLE; AC6 == baseline |
+| R9 | single-writer contention/deadlock | MEDIUM | `max_workers=1` serialises; AC2 (QTimer+100 writes >=30 FPS) guards |
+| PF-1 | maturin/cargo off PATH in CI | MEDIUM | source `$HOME/.cargo/env` + `.venv-mac` in the wheel build step |
+| PF-2 | `.bak` write not atomic | LOW | fsync after copy; resume-from-`.bak` on re-entry |
+
+`risk_tier = medium`. The only CRITICAL (R1) is RESOLVED by the locked decision; the two HIGH (R2/R4) have recorded mitigations in `design.md` section 9. No unmitigated high/critical remains.
+
+## 6. Scope confirmation
+
+`scope_status = within`. The converged spec v2 (ADR 004) restores the FULL WO-6 surface — scheduler + session + trace + telemetry + packaging — with **all four flags** (`enable_telemetry` retained, NOT dropped) and AC5b added. The design implements exactly that surface; no AC is added, removed, or weakened beyond the converged spec. (Note: `analysis.md` section 9's interim 3-flag re-scope is SUPERSEDED by ADR 004 / spec v2 — the design correctly follows spec v2, the source of truth.) No off-rails RAISE required.
+
+## 7. Git baseline
+
+- Branch `wo-6-maturity`; base `cfcd5db` (WO-0..WO-5 merged to fork main). Working tree has pipeline phase artifacts only — no production code changes yet. Correct entry state for Development.

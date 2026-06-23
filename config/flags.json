@@ -7,5 +7,9 @@
   "security_ssrf_allow_local_nav": false,
   "loopguard_max_identical": 50,
   "loopguard_max_ping_pong": 4,
-  "loopguard_poll_budget": 100
+  "loopguard_poll_budget": 100,
+  "use_scheduler_store": false,
+  "use_session_store": false,
+  "enable_trace_store": false,
+  "enable_telemetry": false
 }

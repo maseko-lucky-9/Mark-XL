@@ -1,12 +1,13 @@
-# Phase 0 Reflection (Constitution + Intake) — RARV
-
-- **Result:** Constitution + intake written; branch `wo-0-foundations` cut off origin/main@fb46b5e; 4 bugs
-  and 17-tool inventory verified against the live code, not the spec.
-- **Analysis:** The spec's "18 tools" is a miscount — the 10-missing-speak + 7-with-speak arithmetic pins the
-  true action-tool count at 17. `agent_task`/`save_memory`/`shutdown_jarvis` are inline (main-only).
-- **Reflection:** Dual-path testing must be a routing/wiring assertion (patch action entry points with mocks),
-  not live execution — many tools have real side effects; `shutdown_jarvis` calls `os._exit(0)`.
-- **Verdict:** PASS. HUMAN GATE 1 (constitution sign-off) satisfied by the team-lead's pre-approved Intake
-  Package + explicit unattended/no-questions mandate. Proceed to Phase 1.
-- **Lesson for next phases:** Normalize signatures to `(parameters, player=None, speak=None, **kwargs)`; `**kwargs`
-  absorbs dead `response`/`session_memory`. Do NOT flag the bug fixes (WO-0 gates nothing).
+# Phase 0 Reflection (Constitution + Intake) — WO-6 — RARV
+- **Result:** Constitution + intake written; branch wo-6-maturity off origin/main@cfcd5db; all 4 store families
+  verified PyO3-bound AND hermetic (single path arg, no Tokio reactor) against the live wheel.
+- **Analysis:** WO-6 is far less risky than WO-4 — the stores are already bound (no fork-patch), construct
+  hermetically, and the WO-1 adapter gives a proven threading pattern to mirror for StoreExecutor.
+- **Reflection:** The biggest reuse win is StoreExecutor = the WO-1 mark_xl_rust_adapter pattern (lazy daemon-safe
+  ThreadPoolExecutor + atexit wait=False + Qt-signal marshalling). Do NOT invent a second threading mechanism.
+- **Verdict:** PASS. HUMAN GATE 1 satisfied by team-lead "proceed with WO-6" against the approved Intake Package +
+  standing unattended mandate.
+- **Lessons for next phases:** (1) session persistence is distinct from WO-4's memory_v2 fact memory — no overlap.
+  (2) Extend the WO-0 get_flag allowlist for every sanctioned WO-6 caller (#64). (3) WAL + single-writer
+  (max_workers=1) is mandatory on all DBs. (4) flag-OFF and wheel-absent must both fall back to today's
+  in-memory/JSON behavior.

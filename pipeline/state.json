@@ -1,70 +1,375 @@
 {
   "state_version": "1.0",
-  "run_id": "wo-0-foundations",
-  "work_order": "WO-0",
+  "run_id": "wo-6-maturity",
+  "work_order": "WO-6",
   "repo": "/Users/ltmas/Repo/agents/mark-xl",
-  "branch": "wo-0-foundations",
-  "base": "origin/main@fb46b5e",
+  "branch": "wo-6-maturity",
+  "base": "origin/main@cfcd5db",
+  "spec_version": 3,
   "intake": {
     "complexity": "Complex",
     "dual_client": false
   },
-  "current_phase": 4,
+  "current_phase": 8,
   "phases": {
     "0_constitution_intake": "completed",
     "1_planning": "completed",
     "2_analyze": "completed",
     "3_design": "completed",
-    "4_development": "in_progress",
-    "5_implementation": "pending",
-    "6_testing": "pending",
-    "7_vnv": "pending",
-    "8_deploy": "pending"
-  },
-  "acceptance": {
-    "AC1_ci_green": "pending",
-    "AC2_dual_path_17_tools": "pending",
-    "AC3_4_bugs_fixed_with_regression": "pending",
-    "AC4_flag_off_equals_baseline": "pending"
-  },
-  "spec_corrections": [
-    "18 action tools -> 17 (agent_task/save_memory/shutdown_jarvis are main-only inline tools)"
-  ],
-  "carry_forward": {
-    "executor_needs_player_param": true,
-    "non_uniform_patch_matrix": "see analysis.md §4",
-    "agent_task_planner": "add only file_processor; defer agent_task",
-    "flags_file": "config/flags.json (5 flags, all OFF)",
-    "executor_call_sites": "executor.py:300,340 pass speak= as keyword"
+    "4_development": "completed",
+    "5_implementation": "completed",
+    "6_testing": "completed",
+    "7_vnv": "completed",
+    "8_deploy": "awaiting_human_gate"
   },
   "preflight": {
     "secrets_status": "clean",
     "banned_stack": "pass",
-    "scope": "within",
-    "risk_tier": "medium"
+    "risk_tier": "medium",
+    "scope_status": "within"
   },
-  "development": {
-    "tasks_total": 17,
-    "tasks_file": "pipeline/tasks.md",
-    "spine": "T01|T02-05->T06->T07->T08->T09->T10-17",
-    "tasks": {
-      "T01": {"status": "completed", "files_changed": ["memory/config_manager.py", "config/flags.json"]},
-      "T02": {"status": "completed", "files_changed": ["actions/open_app.py", "actions/web_search.py", "actions/weather_report.py", "actions/send_message.py", "actions/reminder.py"]},
-      "T03": {"status": "completed", "files_changed": ["actions/computer_settings.py", "actions/browser_control.py", "actions/file_controller.py", "actions/desktop.py", "actions/computer_control.py"]},
-      "T04": {"status": "completed", "files_changed": ["actions/code_helper.py", "actions/dev_agent.py", "actions/screen_processor.py", "actions/youtube_video.py"]},
-      "T05": {"status": "completed", "files_changed": ["actions/file_processor.py", "actions/flight_finder.py", "actions/game_updater.py"]},
-      "T06": {"status": "completed", "files_changed": ["agent/executor.py"]},
-      "T07": {"status": "completed", "files_changed": ["main.py"]},
-      "T08": {"status": "completed", "files_changed": ["agent/planner.py"]},
-      "T09": {"status": "completed", "files_changed": ["tests/conftest.py", "tests/test_conftest_smoke.py"]},
-      "T10": {"status": "in_progress"},
-      "T11": {"status": "in_progress"},
-      "T12": {"status": "in_progress"},
-      "T13": {"status": "pending"},
-      "T14": {"status": "pending"},
-      "T15": {"status": "pending"},
-      "T16": {"status": "in_progress"},
-      "T17": {"status": "in_progress"}
+  "converge": {
+    "cycles_used": 3,
+    "cycles_cap": 3,
+    "c1": {
+      "trigger": "Phase-2 feasibility blocker (wheel trace/telemetry read-only at Python boundary)",
+      "decision": "Option 3 \u2014 rebuild Rust wheel, arm64-macOS ONLY, full WO-6 surface retained (no WO-7 deferral)",
+      "authorized_by": "coordinator-relayed user decision",
+      "spec_rewrite": "spec.md v1->v2 in place; backup spec.md.c1.bak",
+      "adr": "docs/decisions/004-wo6-wheel-write-path-arm64.md",
+      "root_cause_refinement": "Rust write methods already existed; gap was PyO3 binding-only. CONFIRMED RESOLVED: rebuilt wheel exposes save/get/list_traces/record/TelemetryRecord."
+    },
+    "c2": {
+      "trigger": "Phase-7 V&V non-unanimous (code-reviewer changes_requested on T21 entry-point test PATH-coupling)",
+      "action": "executor fixed test_wo6_stores.py::test_entrypoint_imports_main to resolve console script via sysconfig.get_path('scripts') instead of shutil.which+PATH; housekeeping: memory_manager.py EOF newline, removed untracked requirements.txt.pre-pin.bak",
+      "scope": "test-only + housekeeping; NO product code changed",
+      "verified": "entry-point test passes WITH and WITHOUT venv activation; full suite 255 collected exit 0; WO-6 18/18; get_flag guard 0 in new files; shutil import removed"
+    },
+    "c3": {
+      "trigger": "user rejected the c1 zero-stub AC5b disposition at pre-merge gate; require REAL telemetry aggregation in WO-6",
+      "decision": "implement TelemetryAggregator::stats() SQL aggregation in Rust; rebuild arm64 wheel; strengthen AC5b to assert real numbers",
+      "authorized_by": "coordinator-relayed user decision",
+      "spec_rewrite": "spec.md v2->v3 in place; backup spec.md.c2.bak",
+      "adr": "docs/decisions/005-wo6-real-telemetry-aggregation.md",
+      "root_cause": "aggregator.rs stats() returns AggregateStats::default() (zeros), ignores _store; struct + PyO3 JSON surface already complete; telemetry table has all columns; gap = missing SQL aggregation",
+      "cycle": "3 of 3 (LAST allowed) \u2014 if not green within c3, STOP and RAISE",
+      "ship_path": "main thread runs /ship after green + V&V unanimous; orchestrator does NOT commit/push/merge"
     }
+  },
+  "design_carry_forward": {
+    "lane_order": "W (DONE) -> shared (core/store_executor.py T06) -> A (T07-T09) / B (T10-T13) -> C (T14-T21)",
+    "fr18_strategy": "pass flag bools from main.py/agent/executor.py into new modules; NO get_flag substring in new files; test_flags.py:139 stays UNCHANGED (callers stay at 2).",
+    "wal_ownership": "Python store-owner runs PRAGMA journal_mode=WAL via ensure_wal(path) before Rust opens the connection.",
+    "migration": "memory_manager.py is flat-JSON FACT memory (no message log) -> first session migration is a crash-safe documented no-op: .bak (fsync + resume-from-bak) + round-trips 0 messages.",
+    "scheduler_status_bridge": "Rust SchedulerStore status vocab (active/paused/cancelled/completed) differs from Python TaskStatus -> wrapper bridges WITHOUT renaming either (FR-2 preserved).",
+    "ac5b_resolved": "AC5b read-back via TelemetryAggregator.stats()+count() (TelemetryStore has no get/list in Rust). Resolved in T03.",
+    "preflight_carry": [
+      "PF-1 wheel build template (DONE in T05)",
+      "PF-2 crash-safe .bak acceptance sub-item on FR-5 task (T08)",
+      "pin ONE literal CI runner string; .as_posix() all paths; gh pr checks is the cross-OS gate (T20)"
+    ]
+  },
+  "acceptance": {
+    "AC1_scheduled_task_survives_restart": "green_integration",
+    "AC2_concurrency_100writes_30fps_wal": "green_per_T12",
+    "AC3_python_m_mark_xl_entrypoint": "green_integration",
+    "AC4_json_to_sqlite_migration_lossfree": "green_per_T08",
+    "AC5_trace_store_1000plus_wo7ready": "green_per_T10",
+    "AC5b_telemetry_record_roundtrip": "PASS_real_aggregation (count=3,total_tokens=75,total_cost=0.12,avg_latency=2.5; independent V&V c3 UNANIMOUS \u2014 verifier live-wheel verified, code-reviewer SQL/encapsulation APPROVE, security max-sev none; supersedes c1/c2 zero-stub disposition)",
+    "AC6_flag_off_equals_baseline": "green_per_T09",
+    "AC7_ci_green_arm64_wheel_linux_win_skip": "green_per_T20",
+    "AC8_license_notice_pinned_vendoring": "green_integration"
+  },
+  "tasks": {
+    "T01": {
+      "status": "completed",
+      "lane": "W",
+      "signal": "pipeline/tasks/T01-quality-signal.json"
+    },
+    "T02": {
+      "status": "completed",
+      "lane": "W",
+      "signal": "pipeline/tasks/T02-quality-signal.json"
+    },
+    "T03": {
+      "status": "completed",
+      "lane": "W",
+      "signal": "pipeline/tasks/T03-quality-signal.json"
+    },
+    "T04": {
+      "status": "completed",
+      "lane": "W",
+      "signal": "pipeline/tasks/T04-quality-signal.json"
+    },
+    "T05": {
+      "status": "completed",
+      "lane": "W",
+      "signal": "pipeline/tasks/T05-quality-signal.json",
+      "note": "arm64 wheel rebuilt + bindings verified by orchestrator"
+    },
+    "T06": {
+      "status": "completed",
+      "lane": "SHARED",
+      "signal": "pipeline/tasks/T06-quality-signal.json"
+    },
+    "T07": {
+      "status": "completed",
+      "lane": "A",
+      "signal": "pipeline/tasks/T07-quality-signal.json"
+    },
+    "T08": {
+      "status": "completed",
+      "lane": "A",
+      "signal": "pipeline/tasks/T08-quality-signal.json"
+    },
+    "T09": {
+      "status": "completed",
+      "lane": "A",
+      "signal": "pipeline/tasks/T09-quality-signal.json"
+    },
+    "T10": {
+      "status": "completed",
+      "lane": "B",
+      "signal": "pipeline/tasks/T10-quality-signal.json"
+    },
+    "T11": {
+      "status": "completed",
+      "lane": "B",
+      "signal": "pipeline/tasks/T11-quality-signal.json"
+    },
+    "T12": {
+      "status": "completed",
+      "lane": "B",
+      "signal": "pipeline/tasks/T12-quality-signal.json"
+    },
+    "T13": {
+      "status": "completed",
+      "lane": "B",
+      "signal": "pipeline/tasks/T13-quality-signal.json"
+    },
+    "T14": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T14-quality-signal.json"
+    },
+    "T15": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T15-quality-signal.json"
+    },
+    "T16": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T16-quality-signal.json"
+    },
+    "T17": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T17-quality-signal.json"
+    },
+    "T18": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T18-quality-signal.json"
+    },
+    "T19": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T19-quality-signal.json"
+    },
+    "T20": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T20-quality-signal.json"
+    },
+    "T21": {
+      "status": "completed",
+      "lane": "C",
+      "signal": "pipeline/tasks/T21-quality-signal.json",
+      "note": "V&V c2 test-robustness fix applied + verified"
+    }
+  },
+  "verified_facts": {
+    "rebuilt_wheel": "dist/mark_xl_rust-0.1.0-cp311-abi3-macosx_11_0_arm64.whl (6.1MB) + editable .so; exposes TraceStore.save/get/list_traces, TraceCollector.start_trace/add_step/end_trace, TelemetryStore.record, TelemetryRecord \u2014 orchestrator-verified",
+    "stores_bound": [
+      "SchedulerStore",
+      "SessionStore",
+      "TraceStore",
+      "TraceCollector",
+      "TelemetryStore",
+      "TelemetrySample",
+      "TelemetryAggregator",
+      "TelemetryRecord"
+    ],
+    "stores_hermetic_single_path_arg": true,
+    "no_tokio_reactor_for_storage": true,
+    "scheduler_store_methods_present": [
+      "create_task",
+      "delete_task",
+      "get_task",
+      "list_tasks",
+      "record_run",
+      "update_status"
+    ],
+    "session_store_methods_present": [
+      "consolidate",
+      "decay",
+      "get_or_create",
+      "link_channel",
+      "list_sessions",
+      "save_message"
+    ],
+    "trace_store_methods_now": [
+      "count",
+      "get",
+      "list_traces",
+      "save"
+    ],
+    "trace_collector_methods_now": [
+      "active_count",
+      "add_step",
+      "end_trace",
+      "start_trace"
+    ],
+    "telemetry_store_methods_now": [
+      "clear",
+      "count",
+      "record"
+    ],
+    "rust_core_types": {
+      "Trace": "core/types.rs:379",
+      "TraceStep": "core/types.rs:364",
+      "TelemetryRecord": "core/types.rs:276 (model_id, prompt/completion/total tokens, latency_seconds, ttft, cost_usd)"
+    },
+    "wheel_target": "arm64 macOS ONLY (no x86 mac / Linux / Windows wheels)",
+    "wheel_rebuild_gotchas": "source $HOME/.cargo/env before maturin (WO-4); PyO3 arg-order trap (WO-4)",
+    "requirements_txt_pinned": true,
+    "ci_workflow": ".github/workflows/ci.yml (T04+T20 modified; arm64 store tests run only on macos-14; all 5 actions SHA-pinned; permissions contents:read; no pull_request_target)",
+    "packaging_complete": [
+      "pyproject.toml",
+      "LICENSE",
+      "NOTICE",
+      "requirements.txt (pinned)",
+      "docs/VENDORING.md (arm64 procedure)"
+    ],
+    "wheel_api_discoveries": {
+      "scheduler_store_unsendable": "SchedulerStore is PyO3 unsendable \u2014 T07 uses _SchedulerStoreProxy single-owner-thread pattern (V&V CONFIRMED airtight: raw store local to owner thread, never escapes)",
+      "session_store_unsendable": "SessionStore is PyO3 unsendable \u2014 T08 runs migration inside a store_executor.submit closure (V&V CONFIRMED: construct-and-use on one pool thread)",
+      "trace_store_thread_safe": "TraceStore/TraceCollector work via store_executor.submit",
+      "telemetry_store_thread_safe": "TelemetryStore works via store_executor.submit",
+      "telemetry_aggregator_stats_stub": "TelemetryAggregator.stats() is stub (zeros); count() is real read-back"
+    }
+  },
+  "carry_forward": {
+    "wo0_get_flag_allowlist": "tests/test_flags.py:139 exact-set + :131 substring scan; prefer WO-3 pass-bools-in to keep callers at 2 (#64) \u2014 V&V CONFIRMED 0 get_flag in all 5 WO-6 files, allowlist unchanged",
+    "macos_target": "arm64 ONLY; macos-latest/macos-14 runner for the wheel; macos-13 x86 will NOT allocate (informational)",
+    "ci_reconciliation": "Linux/Windows lanes SKIP arm64-only store tests (wheel absent) but AC6 flag-OFF parity MUST stay green on every lane",
+    "wo6_flags": [
+      "use_scheduler_store",
+      "use_session_store",
+      "enable_trace_store",
+      "enable_telemetry"
+    ],
+    "human_gate": "STOP at pre-merge gate; do NOT merge to main (only true user authority merges)",
+    "wo5_baseline_count_marker": "RESOLVED in Phase 5: test_wo5_flag_off_regression.py baseline 170->188 (WO-6 additive +18)"
+  },
+  "phase5_result": {
+    "integration_suite": "255 collected / 255 passed / 0 failed / 0 skipped (arm64 macOS, QT_QPA_PLATFORM=offscreen)",
+    "orchestrator_independent_confirm": "exit code 0; 0 failure markers; 255 collected \u2014 corroborated",
+    "fixups": "tests/test_wo5_flag_off_regression.py baseline marker 170->188 (stale baseline, in-scope; WO-6 additive +18)",
+    "failing_tasks_returned": [],
+    "ac6_flag_off_baseline": "confirmed: 4 flags default false, no import side effects, legacy paths byte-identical",
+    "carry_forward_resolution": "WO-5 marker resolved; unsendable-store thread confinement verified clean; TelemetryAggregator.stats() stub documented for V&V"
+  },
+  "phase6_result": {
+    "full_suite": "255/255 pass (0 fail/0 skip, arm64, offscreen)",
+    "wo6_suite": "18/18 pass",
+    "seven_principles": "fetched live via playwright-cli (GfG, updated 13 Jun 2026); all 7 applied",
+    "ac_traceability": "AC1-AC8 incl AC5b all green-with-test (explicit test-function mapping); 0 gaps returned",
+    "coverage_new_modules": "store_executor 89%, trace_collector 88%, telemetry 82%, task_queue 58% (Qt-UI headless-unreachable), memory_manager 37% (Qt wiring + WO-4 paths), __main__.py 0% (GUI shim by design)",
+    "orchestrator_spotcheck": "confirmed AC5b test is substantive: TelemetryCapture.record() writes a real row (count>=1 after pool drain), stats() decodes structured dict. record() takes FIELDS via the wrapper, not a TelemetryRecord object."
+  },
+  "vnv_decision_items": {
+    "AC5b_aggregator_stats_stub": {
+      "finding": "TelemetryStore.record() write path is REAL (count()>=1 after record, orchestrator-confirmed; V&V verifier live-exercised count 0->1->2). TelemetryAggregator.stats() is a read-only Rust stub returning all-zero values (total_requests=0 while count()=2).",
+      "spec_wording": "spec.md AC5b: 'aggregator reports non-zero token/latency stats'",
+      "met": "PARTIAL \u2014 write round-trip MET (the substantive FR-9 requirement via count()); numeric non-zero aggregation NOT met (wheel stub).",
+      "vnv_ruling": "ACCEPT as a known wheel limitation. Basis: substantive FR-9 requirement (durable per-call model/token/latency record that round-trips) IS met and live-proven via count(); the all-zero aggregator is a read-side rollup naturally owned by WO-7; implementing it would re-open the wheel-rebuild lane for a pure observability concern. Verifier APPROVE + orchestrator recommendation concur. AC5b ruled PASS with the aggregator rollup deferred to WO-7 as a tracked follow-up. NOTE: this ruling is NOT the cause of the Phase-7 FAIL."
+    }
+  },
+  "phase7_result": {
+    "verdict": "PASS_UNANIMOUS",
+    "converge_cycle": "c3 (3/3 \u2014 cap reached, no c4)",
+    "security_max_severity": "none",
+    "all_9_acs": "PASS",
+    "ac5b": "PASS (REAL non-zero aggregation: count=3/total_tokens=75/total_cost=0.12/avg_latency=2.5; supersedes c2 zero-stub)",
+    "reviewers": {
+      "verifier": "APPROVE \u2014 live wheel exercise observed==expected; suite 255/0 rc=0; cargo -p openjarvis-telemetry 52/0 (incl 2 new c3 tests)",
+      "code_reviewer": "APPROVE \u2014 static SELECT COUNT/COALESCE(SUM/AVG) maps onto AggregateStats+FR-9; COALESCE empty-table->zeros; pub(crate) conn-private encapsulation sound; delta limited to 3 files; no truncation",
+      "security_auditor": "APPROVE max-sev NONE \u2014 static parameterless SQL (no injection); gitleaks clean; no unsafe; no new deps"
+    },
+    "scope_status": "within",
+    "delta_reviewed": [
+      "mark-xl-rust-fork/crates/openjarvis-telemetry/src/aggregator.rs",
+      "mark-xl-rust-fork/crates/openjarvis-telemetry/src/store.rs (pub(crate) query_stats)",
+      "tests/test_wo6_stores.py::test_telemetry_record_roundtrip"
+    ],
+    "other_8_acs": "carry c2 PASS \u2014 struct/schema/PyO3-signature/flags/CI unchanged (mtime+diff proven)",
+    "artifacts": {
+      "final_review": "pipeline/final-review.md",
+      "reflection": "pipeline/memory/phase_7-reflect.md"
+    },
+    "c2_lineage": "c2 was PASS_UNANIMOUS with AC5b accepted-as-zero-stub; user rejected that disposition -> c3 re-opened the lane and this c3 verdict supersedes it"
+  },
+  "c3_tasks": {
+    "C3a_rust_aggregation": {
+      "status": "completed",
+      "files": [
+        "mark-xl-rust-fork/crates/openjarvis-telemetry/src/aggregator.rs",
+        "mark-xl-rust-fork/crates/openjarvis-telemetry/src/store.rs (maybe pub(crate) accessor)"
+      ]
+    },
+    "C3b_wheel_rebuild_revendor": {
+      "status": "completed",
+      "note": "arm64 maturin develop+build; source $HOME/.cargo/env first"
+    },
+    "C3c_strengthen_ac5b_test": {
+      "status": "completed",
+      "files": [
+        "tests/test_wo6_stores.py::test_telemetry_record_roundtrip"
+      ]
+    }
+  },
+  "c3_result": {
+    "rust": "aggregator.rs stats()->store.query_stats() real SQL; cargo test -p openjarvis-telemetry 52 pass (2 new aggregation tests)",
+    "wheel": "arm64 rebuilt dist/mark_xl_rust-0.1.0-cp311-abi3-macosx_11_0_arm64.whl (6.1MB, mtime 19:23)",
+    "binding_untouched": "telemetry.rs PyO3 mtime 17:27 (Lane W) \u2014 NOT touched by c3; stats() signature unchanged, picks up real compute on rebuild",
+    "test": "test_wo6_stores.py AC5b asserts real numbers (count=3, total_tokens=75, total_cost~0.12, avg_latency~2.5)",
+    "orchestrator_verified": "independent end-to-end through rebuilt wheel: empty->zeros no error; 3 known records->correct aggregates. Full suite 255/255 exit 0.",
+    "scope": "ONLY aggregator.rs, store.rs (pub(crate) query_stats), test_wo6_stores.py touched; no schema/struct/binding-signature/flags/ci change; get_flag guard unchanged"
+  },
+  "deploy": {
+    "infra_change_detected": false,
+    "infra_note": "no *.tf/docker-compose/k8s/Dockerfile changes -> terraform/ship-deploy SKIPPED; merge-only WO",
+    "human_gate_2": "BLOCKING \u2014 pre-merge review; orchestrator does NOT commit/push/PR/merge",
+    "ship_path": "MAIN THREAD runs the standing /ship (CI-watch + auto-merge on green + deploy-verify) after the gate; merge target = fork origin/main (NEVER upstream)",
+    "deliverables_state": "uncommitted working tree on wo-6-maturity (HEAD == cfcd5db)",
+    "cross_os_gate": "gh pr checks (Linux/Win x Py3.11-3.13 + arm64 macOS wheel build) runs after PR opens; local V&V is arm64-only"
+  },
+  "revnv_c3_resolution": {
+    "resolved": true,
+    "resumed": "fresh invocation after Anthropic usage-limit reset (~19:50 SAST)",
+    "action": "re-dispatched vnv-lead independent lane on the c3 delta ONLY; phases 0-6 + c3 impl idempotently skipped (all completed/verified)",
+    "result": "PASS_UNANIMOUS, security max-sev none, scope within, no defects",
+    "next": "STOP at pre-merge HUMAN GATE; main thread runs standing /ship targeting the FORK's own main (never upstream); orchestrator does NOT commit/push/PR/merge",
+    "branch_state": "wo-6-maturity @ cfcd5db; full WO-6 change set uncommitted in working tree"
+  },
+  "deploy_gate": {
+    "status": "awaiting_human_gate",
+    "infra_change_detected": false,
+    "infra_note": "no *.tf/docker-compose/k8s/Dockerfile in the WO-6 change set -> deploy steps skipped; merge-only WO",
+    "ship_owner": "MAIN THREAD (standing /ship), not the orchestrator",
+    "merge_target": "the FORK's own main (origin/main of the fork) \u2014 NEVER upstream",
+    "human_gate": "Human Gate 2 \u2014 user already authorized merge-on-green; main thread executes /ship close-out"
   }
 }

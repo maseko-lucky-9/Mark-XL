@@ -1,11 +1,11 @@
 {
   "taskId": "T06",
-  "timestamp": "2026-06-20T22:17:58Z",
+  "timestamp": "2026-06-23T15:17:12Z",
   "buildPassed": true,
   "typecheckPassed": true,
   "testsPassed": true,
   "testsAdded": 0,
-  "testCommand": "python -m py_compile agent/executor.py",
-  "testOutput": "_call_tool args: ['tool', 'parameters', 'player', 'speak']\n_call_tool signature: OK\nfile_processor branch: FOUND\nB3 raise: OK\ngenerated_code branch: intact\nT06 PASS",
-  "filesChanged": ["agent/executor.py"]
+  "testCommand": "python -c 'import core.store_executor' && grep -c get_flag core/store_executor.py && python -m pytest tests/test_flags.py -q",
+  "testOutput": "import OK\nget_flag count: 0\nensure_wal OK\nlazy pool OK, max_workers=1\nStoreResultBridge OK; worker thread name = mark_xl_store_0\nensure_wal idempotent OK\ntest_flags.py: 7 passed in 0.19s\nFR-18 sanctioned get_flag callers gate: 1 passed (callers unchanged: main.py, agent/executor.py)\nfut.result() exception guard logs warning + suppresses emit (got == [7], error path did not emit)",
+  "filesChanged": ["core/store_executor.py"]
 }

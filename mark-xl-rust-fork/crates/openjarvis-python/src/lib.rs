@@ -140,6 +140,7 @@ fn mark_xl_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<telemetry::PyInstrumentedEngine>()?;
     // --- Telemetry (new session/phase/ITL/FLOPs classes) ---
     m.add_class::<telemetry::PyTelemetrySample>()?;
+    m.add_class::<telemetry::PyTelemetryRecord>()?;
     m.add_class::<telemetry::PyTelemetrySessionCore>()?;
     m.add_class::<telemetry::PyItlStats>()?;
     m.add_class::<telemetry::PyFlopsEstimator>()?;

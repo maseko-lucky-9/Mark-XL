@@ -1,5 +1,6 @@
 //! TelemetryStore — SQLite persistence for telemetry records.
 
+use crate::aggregator::AggregateStats;
 use openjarvis_core::{OpenJarvisError, TelemetryRecord};
 use parking_lot::Mutex;
 use rusqlite::Connection;
@@ -127,6 +128,36 @@ impl TelemetryStore {
             ))
         })?;
         Ok(())
+    }
+
+    /// Run a single SQL aggregation over the `telemetry` table and map the
+    /// result row into [`AggregateStats`].  Crate-internal: the sibling
+    /// [`crate::aggregator::TelemetryAggregator`] calls this because `conn` is a
+    /// private field owned by the store.  An empty table yields all-zeros (the
+    /// `COALESCE`s turn `SUM`/`AVG` NULLs into 0, and `COUNT(*)` is 0).
+    pub(crate) fn query_stats(&self) -> Result<AggregateStats, OpenJarvisError> {
+        let conn = self.conn.lock();
+        conn.query_row(
+            "SELECT COUNT(*), \
+                    COALESCE(SUM(total_tokens),0), \
+                    COALESCE(AVG(latency_seconds),0.0), \
+                    COALESCE(AVG(throughput_tok_per_sec),0.0), \
+                    COALESCE(SUM(cost_usd),0.0), \
+                    COALESCE(SUM(energy_joules),0.0) \
+             FROM telemetry",
+            [],
+            |row| {
+                Ok(AggregateStats {
+                    total_requests: row.get::<_, i64>(0)? as usize,
+                    total_tokens: row.get(1)?,
+                    avg_latency: row.get(2)?,
+                    avg_throughput: row.get(3)?,
+                    total_cost: row.get(4)?,
+                    total_energy: row.get(5)?,
+                })
+            },
+        )
+        .map_err(|e| OpenJarvisError::Io(std::io::Error::other(e.to_string())))
     }
 }
 

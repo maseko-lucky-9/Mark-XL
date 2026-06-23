@@ -1,11 +1,11 @@
 {
   "taskId": "T15",
-  "timestamp": "2026-06-20T22:50:59Z",
+  "timestamp": "2026-06-23T17:10:00Z",
   "buildPassed": true,
   "typecheckPassed": true,
   "testsPassed": true,
-  "testsAdded": 2,
-  "testCommand": "QT_QPA_PLATFORM=offscreen .venv-mac/bin/pytest tests/test_regressions.py::test_b4_planner_prompt_contains_file_processor tests/test_regressions.py::test_b4_agent_task_not_in_planner_prompt -v",
-  "testOutput": "tests/test_regressions.py::test_b4_planner_prompt_contains_file_processor PASSED [ 50%]\ntests/test_regressions.py::test_b4_agent_task_not_in_planner_prompt PASSED [100%]\n\n============================== 2 passed in 0.16s ===============================",
-  "filesChanged": ["tests/test_regressions.py"]
+  "testsAdded": 0,
+  "testCommand": "python -c 'import mark_xl; print(mark_xl.__version__)'",
+  "testOutput": "0.6.0",
+  "filesChanged": ["mark_xl/__init__.py", "mark_xl/__main__.py"]
 }

@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mark-xl"
+version = "0.6.0"
+requires-python = ">=3.11"
+description = "Mark-XL: AI assistant with durable persistence"
+
+[project.scripts]
+mark-xl = "main:main"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mark_xl*"]
